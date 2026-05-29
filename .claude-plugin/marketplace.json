@@ -1,0 +1,51 @@
+{
+  "name": "loom",
+  "owner": { "name": "g-agent-lab" },
+  "plugins": [
+    {
+      "name": "autopilot",
+      "source": "./plugins/autopilot",
+      "description": "Run a queue of plan files sequentially and autonomously via /planning:exec — one after another, each in its own git worktree"
+    },
+    {
+      "name": "kit",
+      "source": "./plugins/kit",
+      "description": "Bootstrap llm-kit discipline (greenfield + brownfield) into any project"
+    },
+    {
+      "name": "brainstorm",
+      "source": { "source": "git-subdir", "url": "https://github.com/umputun/cc-thingz.git", "path": "plugins/brainstorm" },
+      "description": "Collaborative design dialogue — idea to approaches to design to plan (via umputun/cc-thingz)"
+    },
+    {
+      "name": "planning",
+      "source": { "source": "git-subdir", "url": "https://github.com/umputun/cc-thingz.git", "path": "plugins/planning" },
+      "description": "Structured implementation planning + autonomous plan execution (via umputun/cc-thingz)"
+    },
+    {
+      "name": "review",
+      "source": { "source": "git-subdir", "url": "https://github.com/umputun/cc-thingz.git", "path": "plugins/review" },
+      "description": "PR review, git diff annotation review, writing style guide (via umputun/cc-thingz)"
+    },
+    {
+      "name": "release-tools",
+      "source": { "source": "git-subdir", "url": "https://github.com/umputun/cc-thingz.git", "path": "plugins/release-tools" },
+      "description": "Release workflow — auto-versioning, release notes, changelog (via umputun/cc-thingz)"
+    },
+    {
+      "name": "thinking-tools",
+      "source": { "source": "git-subdir", "url": "https://github.com/umputun/cc-thingz.git", "path": "plugins/thinking-tools" },
+      "description": "Analytical thinking — dialectic, root-cause-investigator, ask-codex (via umputun/cc-thingz)"
+    },
+    {
+      "name": "skill-eval",
+      "source": { "source": "git-subdir", "url": "https://github.com/umputun/cc-thingz.git", "path": "plugins/skill-eval" },
+      "description": "Forces skill evaluation before every response (via umputun/cc-thingz)"
+    },
+    {
+      "name": "workflow",
+      "source": { "source": "git-subdir", "url": "https://github.com/umputun/cc-thingz.git", "path": "plugins/workflow" },
+      "description": "Session workflow helpers — learn, clarify, wrong, md-copy, txt-copy (via umputun/cc-thingz)"
+    }
+  ]
+}

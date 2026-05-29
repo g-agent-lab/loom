@@ -1,0 +1,55 @@
+{
+  "name": "kit",
+  "description": "Bootstrap LLM-Discipline kit (g-agent-lab/llm-kit) into greenfield or brownfield projects via interactive Claude Code skills.",
+  "version": "0.1.0",
+  "author": {
+    "name": "gurgen"
+  },
+  "homepage": "https://github.com/g-agent-lab/loom",
+  "repository": "https://github.com/g-agent-lab/loom",
+  "license": "MIT",
+  "userConfig": {
+    "kit_source": {
+      "title": "Kit source URL",
+      "type": "string",
+      "description": "Git URL of the llm-kit repository. Used by ensure-kit.sh when the kit is not already present.",
+      "default": "https://github.com/g-agent-lab/llm-kit.git"
+    },
+    "kit_install_method": {
+      "title": "Kit install method",
+      "type": "string",
+      "description": "How to install llm-kit when missing: 'submodule' (recommended for git-tracked projects), 'copy' (clone-and-strip-.git), or 'local' (use kit_local_path as source).",
+      "default": "submodule"
+    },
+    "kit_install_path": {
+      "title": "Kit install path",
+      "type": "string",
+      "description": "Where llm-kit should live inside the project (relative to project root).",
+      "default": "external/llm-kit"
+    },
+    "kit_local_path": {
+      "title": "Local kit path (for install_method=local)",
+      "type": "string",
+      "description": "Absolute path to a local llm-kit checkout, used only when install_method=local.",
+      "default": ""
+    },
+    "default_branch": {
+      "title": "Default git branch for new projects",
+      "type": "string",
+      "description": "Initial branch name created by greenfield Step 1.",
+      "default": "main"
+    },
+    "auto_install_deps": {
+      "title": "Auto-run package install during bootstrap",
+      "type": "boolean",
+      "description": "When true, the skill runs the stack's package install command (npm install, pip install, go mod tidy, etc.) automatically when overlays specify it. When false, the skill emits the command and waits for the user to run it.",
+      "default": true
+    },
+    "auto_commit_steps": {
+      "title": "Auto-commit between steps",
+      "type": "boolean",
+      "description": "When true, the skill creates one commit per logical bootstrap step (Step 1, Step 2, ...). When false, all bootstrap changes land in a single 'chore: bootstrap llm-kit' commit at the end.",
+      "default": false
+    }
+  }
+}

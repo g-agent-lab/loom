@@ -1,0 +1,43 @@
+{
+  "name": "autopilot",
+  "description": "Run a queue of plan files sequentially via /planning:exec — one after another, autonomously, each in its own git worktree",
+  "version": "0.2.0",
+  "author": {
+    "name": "gurgen"
+  },
+  "homepage": "https://github.com/g-agent-lab/loom",
+  "repository": "https://github.com/g-agent-lab/loom",
+  "license": "MIT",
+  "userConfig": {
+    "plans_dir": {
+      "title": "Plans directory",
+      "type": "string",
+      "description": "Directory to discover plan files in, relative to project root. Files in 'completed/' subdirectory are skipped.",
+      "default": "docs/plans/active"
+    },
+    "completed_subdir": {
+      "title": "Completed subdirectory",
+      "type": "string",
+      "description": "Subdirectory name (under plans_dir) where successful plans are moved to.",
+      "default": "completed"
+    },
+    "stop_on_failure": {
+      "title": "Stop on failure",
+      "type": "boolean",
+      "description": "When a plan finishes with unchecked tasks, stop the queue immediately. When false, the queue continues to the next plan despite the failure.",
+      "default": true
+    },
+    "worktree_strategy": {
+      "title": "Worktree strategy",
+      "type": "string",
+      "description": "How to isolate plans: 'per_plan' creates a new git worktree for each plan; 'shared' creates one worktree for the whole queue; 'none' runs in the current working directory.",
+      "default": "per_plan"
+    },
+    "max_plans_per_run": {
+      "title": "Max plans per run",
+      "type": "number",
+      "description": "Hard cap on the number of plans this queue invocation may execute. Safety brake against runaway discovery. 0 = no cap.",
+      "default": 0
+    }
+  }
+}

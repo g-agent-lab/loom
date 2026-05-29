@@ -1,0 +1,8 @@
+# build scaffolding — not part of the published marketplace
+HANDOFF.md
+
+# local backup bundles, if any
+*.bundle
+
+# OS / editor noise
+.DS_Store
