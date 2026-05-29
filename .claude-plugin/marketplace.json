@@ -13,6 +13,11 @@
       "description": "Bootstrap llm-kit discipline (greenfield + brownfield) into any project"
     },
     {
+      "name": "slicer",
+      "source": "./plugins/slicer",
+      "description": "Slice a ready draft into ralphex-executable iteration plans — parser-strict, pack-split, sizing-checked"
+    },
+    {
       "name": "brainstorm",
       "source": { "source": "git-subdir", "url": "https://github.com/umputun/cc-thingz.git", "path": "plugins/brainstorm" },
       "description": "Collaborative design dialogue — idea to approaches to design to plan (via umputun/cc-thingz)"

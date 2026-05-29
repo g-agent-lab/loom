@@ -1,0 +1,11 @@
+{
+  "name": "slicer",
+  "description": "Slice a ready draft into ralphex-executable iteration plans — parser-strict task format, pack splitting, sizing, and a pre-slicing gate.",
+  "version": "0.1.0",
+  "author": {
+    "name": "gurgen"
+  },
+  "homepage": "https://github.com/g-agent-lab/loom",
+  "repository": "https://github.com/g-agent-lab/loom",
+  "license": "MIT"
+}

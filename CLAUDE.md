@@ -1,13 +1,15 @@
 # CLAUDE.md — loom marketplace
 
-Personal Claude Code plugin marketplace. Two own plugins (`autopilot`, `kit`) plus
-seven plugins referenced from `umputun/cc-thingz`.
+Personal Claude Code plugin marketplace. Three own plugins (`autopilot`, `kit`,
+`slicer`) plus seven plugins referenced from `umputun/cc-thingz`.
 
 ## Conventions
 
-- **Own plugins only.** Edit `plugins/autopilot/` and `plugins/kit/`. Never vendor
-  or edit umputun's plugins here — they are referenced via `git-subdir` in
+- **Own plugins only.** Edit `plugins/autopilot/`, `plugins/kit/`, and `plugins/slicer/`.
+  Never vendor or edit umputun's plugins here — they are referenced via `git-subdir` in
   `.claude-plugin/marketplace.json` and must stay references (no copies, no drift).
+- **`slicer` is the single source of truth** for `slice-draft-to-plans`. The skill no
+  longer ships in llm-kit's bootstrap templates — do not re-add a copy there.
 - **Versioning.** Bump `version` in the plugin's `.claude-plugin/plugin.json` and add
   a `CHANGELOG.md` entry for any change to an own plugin.
 - **Bilingual triggers.** Skill `description` fields list English phrases first, then
