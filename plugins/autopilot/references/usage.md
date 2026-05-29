@@ -58,6 +58,20 @@ The queue does NOT inject a "move to completed" step into your plans — `mark-c
 | `stop_on_failure` | `true` | Break loop on first failure; otherwise continue |
 | `worktree_strategy` | `per_plan` | `per_plan` \| `shared` \| `none` |
 | `max_plans_per_run` | `0` | Hard cap on plans per invocation; 0 disables |
+| `notify` | `true` | Telegram notifications master switch; no-op until credentials configured |
+| `notify_level` | `per_plan` | `per_plan` (start + every plan + summary) \| `summary` (start + failures + summary) |
+
+## Telegram notifications
+
+Opt-in queue progress to a Telegram chat — queue start, per-plan start/result,
+failures, final summary; each tagged with machine label, project, branch, and
+`N/M`. Built for one shared bot across several machines: both post to one
+supergroup with no collision, each project routes to its own forum topic
+(`message_thread_id`), and a `TELEGRAM_LABEL` tells home/work apart. All ids live
+in `$CLAUDE_PLUGIN_DATA` (`telegram.conf` + `telegram-topics.conf`) or env — never
+committed; only the bot token is a real secret. Unconfigured = silent no-op;
+best-effort, never blocks a run; covers the queue only. Full setup in
+[`telegram-setup.md`](./telegram-setup.md).
 
 ## Custom rules
 

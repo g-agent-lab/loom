@@ -1,7 +1,7 @@
 {
   "name": "autopilot",
   "description": "Run a queue of plan files sequentially via /planning:exec — one after another, autonomously, each in its own git worktree",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": {
     "name": "gurgen"
   },
@@ -38,6 +38,18 @@
       "type": "number",
       "description": "Hard cap on the number of plans this queue invocation may execute. Safety brake against runaway discovery. 0 = no cap.",
       "default": 0
+    },
+    "notify": {
+      "title": "Telegram notifications",
+      "type": "boolean",
+      "description": "Send Telegram progress notifications during a queue run (queue start, per-plan, failures, final summary). Requires a bot token + chat id in $CLAUDE_PLUGIN_DATA/telegram.conf — when those are absent, notifications silently no-op regardless of this switch. Set false to mute without removing credentials.",
+      "default": true
+    },
+    "notify_level": {
+      "title": "Notification level",
+      "type": "string",
+      "description": "How chatty Telegram notifications are: 'per_plan' sends a message at queue start, each plan start, each plan result, and the final summary; 'summary' sends only queue start, failures, and the final summary (no per-plan start/success spam).",
+      "default": "per_plan"
     }
   }
 }
