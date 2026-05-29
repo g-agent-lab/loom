@@ -49,6 +49,29 @@ The skill asks once which worktree strategy to use across the run, then iterates
 | `stop_on_failure` | `true` | Break the run on first plan failure |
 | `worktree_strategy` | `per_plan` | `per_plan` \| `shared` \| `none` |
 | `max_plans_per_run` | `0` | Hard cap (0 = no cap) |
+| `notify` | `true` | Telegram notifications master switch (no-op until configured) |
+| `notify_level` | `per_plan` | `per_plan` \| `summary` |
+
+## Telegram notifications
+
+Opt-in. Start a queue and watch it from your phone — queue start, each plan,
+failures, and the final summary, each tagged with machine, project, branch, `N/M`:
+
+```
+🏠 home: 🚀 my-app [main] — queue: 4 plan(s)
+🏠 home: ▶️ my-app [2/4] 02-api.md — running
+🏠 home: ✅ my-app [2/4] 02-api.md — done → completed/
+🏠 home: ❌ my-app [3/4] 03-ui.md — FAILED (3 tasks unchecked)
+🏠 home: 🏁 my-app [main] — done: 3 ok, 1 failed, 0 skipped
+```
+
+Built for **one shared bot across several machines**: both post to one supergroup
+with no collision (`sendMessage` only appends), each project routes to its own
+**forum topic**, and a machine label (`home`/`work`) tells them apart. All Telegram
+ids live in `$CLAUDE_PLUGIN_DATA` (never committed — only the bot token is a real
+secret); unconfigured = silent no-op; best-effort, never blocks a run. Covers the
+queue only, not standalone `/planning:exec`. Full setup, incl. the project→topic
+map: [`references/telegram-setup.md`](references/telegram-setup.md).
 
 ## Custom rules
 
@@ -68,10 +91,12 @@ autopilot/
 │       ├── mark-completed.sh                # mv plan → completed/
 │       ├── init-queue-log.sh
 │       ├── append-queue-log.sh
+│       ├── notify.sh                        # best-effort Telegram notifier
 │       └── resolve-file.sh                  # override chain for prompts
 ├── references/
 │   ├── usage.md
-│   └── custom-rules.md
+│   ├── custom-rules.md
+│   └── telegram-setup.md
 └── scripts/resolve-rules.sh                 # override chain for custom rules
 ```
 

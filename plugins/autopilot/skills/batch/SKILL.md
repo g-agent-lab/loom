@@ -35,6 +35,58 @@ When the user asks to add, show, or clear custom queue rules:
 
 Project-level rules take precedence. **CRITICAL: this skill must NEVER modify its own files** (SKILL.md, scripts, plugin.json, references). Only `.claude/queue-rules.md` and `$CLAUDE_PLUGIN_DATA/queue-rules.md` are writable for rules management.
 
+## Telegram Notifications
+
+The queue can push progress to Telegram so the operator sees plan-by-plan status without watching the session. This is **opt-in and best-effort**: it never blocks, retries, or fails a queue run.
+
+**Gating.** Notifications are active only when the `notify` userConfig is not `false` (default `true`). If `notify` is `false`, skip every notification step below entirely and run the queue silently. When `notify` is on but no credentials are configured, the script is a silent no-op — so it is always safe to call.
+
+**Setup (operator, one-time).** No Telegram id ever lives in a repo. The notify script reads everything from env or from per-machine files in `$CLAUDE_PLUGIN_DATA`:
+
+```
+# $CLAUDE_PLUGIN_DATA/telegram.conf  (secret; per machine)
+TELEGRAM_BOT_TOKEN=123456:AA...
+TELEGRAM_CHAT_ID=-1001234567890        # supergroup id (one, shared across projects)
+TELEGRAM_LABEL=home                    # optional machine tag (home/work)
+
+# $CLAUDE_PLUGIN_DATA/telegram-topics.conf  (project -> forum topic; per machine)
+github.com/me/proj-a = 42              # key = normalized `git remote origin`
+```
+
+When the user asks to set up notifications and `$CLAUDE_PLUGIN_DATA` is set, write these files for them (chat/topic ids come from messaging the bot, then opening `https://api.telegram.org/bot<token>/getUpdates`). If `$CLAUDE_PLUGIN_DATA` is unset, tell them to export the env vars instead. See `${CLAUDE_PLUGIN_ROOT}/references/telegram-setup.md`.
+
+**Multi-machine / topics / label are handled entirely inside `notify.sh`** — it routes each project to its forum topic (via `message_thread_id`, looked up from the topic map by the repo's `origin` remote) and prepends the machine label. The orchestrator does NOT build these in: just send the plain `<PROJECT> [<BRANCH>]`-prefixed text below and the script adds the rest. Two machines posting to the same bot never collide — `sendMessage` only appends.
+
+**Sending.** All messages go through one helper — pass the full message text as a single argument:
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/skills/batch/scripts/notify.sh "<message text>"
+```
+
+**Context.** At queue start (Step 4) capture, once, the project name and branch for message prefixes:
+
+```bash
+PROJECT=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"); BRANCH=$(git branch --show-current 2>/dev/null); echo "$PROJECT [$BRANCH]"
+```
+
+Reuse `<PROJECT>` and `<BRANCH>` in every message below.
+
+**Level.** The `notify_level` userConfig (default `per_plan`) controls volume:
+- `per_plan` — send all five event types below.
+- `summary` — send only **queue start**, **plan failure**, and **final summary** (skip per-plan start and per-plan success messages).
+
+**Events and templates** (plain text; emoji are intentional):
+
+| Event | Level | Step | Template |
+|---|---|---|---|
+| Queue start | always | 4 | `🚀 <PROJECT> [<BRANCH>] — queue: <M> plan(s)` + newline + numbered plan-basename list |
+| Plan start | per_plan only | 6.1 | `▶️ <PROJECT> [N/M] <plan-basename> — running` |
+| Plan success | per_plan only | 6.7 | `✅ <PROJECT> [N/M] <plan-basename> — done → <completed-subdir>/` (append ` (already complete)` when it was complete on entry) |
+| Plan failure | always | 6.7 | `❌ <PROJECT> [N/M] <plan-basename> — FAILED (<count> tasks unchecked)` |
+| Final summary | always | 8 | `🏁 <PROJECT> [<BRANCH>] — done: <completed> ok, <failed> failed, <skipped> skipped` |
+
+Failures are sent at **both** levels — a failure is exactly the moment the operator needs to know. Treat each `notify.sh` call as fire-and-forget: do not check its output, do not retry, do not let it affect queue control flow.
+
 ## Process
 
 ### Step 1. Resolve plans directory
@@ -97,6 +149,8 @@ Capture the log path it outputs (after the leading `queue-log:` prefix). Use thi
 
 IMPORTANT: Always use `${CLAUDE_PLUGIN_ROOT}/skills/batch/scripts/append-queue-log.sh` to write to the log after initialization. Never write to it directly.
 
+**Notify (if `notify` is on — see Telegram Notifications).** Capture `<PROJECT>` and `<BRANCH>` once (the context snippet in that section), then send the **queue start** message: `🚀 <PROJECT> [<BRANCH>] — queue: <M> plan(s)` followed by a newline and the numbered list of plan basenames. Pass the whole thing as one argument to `notify.sh`.
+
 ### Step 5. Create TaskCreate items
 
 Create one TaskCreate per discovered plan in order:
@@ -121,7 +175,7 @@ For each plan:
    --- Queue plan N of M: <plan-basename> ---
    ```
 
-2. **Mark task in_progress**: `TaskUpdate(taskId, status="in_progress")`.
+2. **Mark task in_progress**: `TaskUpdate(taskId, status="in_progress")`. **Notify (per_plan level only):** `▶️ <PROJECT> [N/M] <plan-basename> — running`.
 
 3. **Pre-flight: idempotent success check (NEW in v0.2)**. Re-read the plan file from disk. Count:
    - Total `### Task N:` and `### Iteration N:` sections containing checkboxes.
@@ -152,6 +206,7 @@ For each plan:
    - Append to queue log: `bash ${CLAUDE_PLUGIN_ROOT}/skills/batch/scripts/append-queue-log.sh <log-path> "ok <plan-basename>"`. When the plan was already complete on entry, append `"ok <plan-basename> (already complete)"` instead.
    - `TaskUpdate(taskId, status="completed")`.
    - Report to user: `✓ Plan N of M: <plan-basename> completed (moved to <completed-subdir>/)`.
+   - **Notify (per_plan level only):** `✅ <PROJECT> [N/M] <plan-basename> — done → <completed-subdir>/` (append ` (already complete)` when it was complete on entry).
    - Continue to the next plan.
 
    On failure:
@@ -160,6 +215,7 @@ For each plan:
    - Append to log: `bash ${CLAUDE_PLUGIN_ROOT}/skills/batch/scripts/append-queue-log.sh <log-path> "fail <plan-basename>: <count> tasks unchecked"`.
    - `TaskUpdate(taskId, status="completed")` (it's done from the queue's perspective — it ran).
    - Report to user: `✗ Plan N of M: <plan-basename> stopped with unchecked tasks`.
+   - **Notify (always, both levels):** `❌ <PROJECT> [N/M] <plan-basename> — FAILED (<count> tasks unchecked)`.
    - Check the `stop_on_failure` userConfig (default: true):
      - If true: increment `skipped` by the number of remaining plans (`M - N`). Break out of the loop and proceed to Step 7.
      - If false: continue to the next plan.
@@ -207,6 +263,8 @@ Report a single final line:
 ```
 Queue done: <completed> completed, <failed> failed, <skipped> skipped.
 ```
+
+**Notify (always, when `notify` is on):** send the **final summary** message: `🏁 <PROJECT> [<BRANCH>] — done: <completed> ok, <failed> failed, <skipped> skipped`.
 
 Do not push branches, do not merge worktrees, do not delete worktrees. The user inspects the resulting branches and decides what to merge or discard. The queue's job ends here.
 
