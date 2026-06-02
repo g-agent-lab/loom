@@ -1,7 +1,7 @@
 {
   "name": "autopilot",
   "description": "Run a queue of plan files sequentially via /planning:exec — one after another, autonomously, each in its own git worktree",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "author": {
     "name": "gurgen"
   },

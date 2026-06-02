@@ -119,6 +119,22 @@ For every value: **environment variable** wins, then `telegram.conf`. The topic 
 resolved as: `TELEGRAM_TOPIC_ID` env → `telegram.conf` → `telegram-topics.conf`
 lookup by project key.
 
+## Which data dir? (`-loom` vs `-inline`)
+
+Claude Code names a plugin's data dir after how it is installed: a marketplace
+install of `autopilot@loom` resolves `…/plugins/data/autopilot-loom/`, while an
+inline/local copy resolves `…/plugins/data/autopilot-inline/`. The credential file
+must live in the dir the active install actually resolves. To make this forgiving,
+`notify.sh` **falls back to searching every `autopilot-*` data dir** for a conf
+that carries a token, and reads the topics map from the same dir — so a token in
+either sibling delivers, and you don't have to know which one is active. (Putting
+the same two files in both siblings also works and is harmless.)
+
+> Note: the queue threads the data dir into `notify.sh` as an explicit argument,
+> because `$CLAUDE_PLUGIN_DATA` is not reliably present inside a Bash subprocess —
+> a notification that "ran but sent nothing" before 0.3.1 was this bug, not a
+> Telegram problem.
+
 ## Customising messages
 
 The wording lives in the `batch` skill's `Telegram Notifications` section

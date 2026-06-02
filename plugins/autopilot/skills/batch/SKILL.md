@@ -57,11 +57,13 @@ When the user asks to set up notifications and `$CLAUDE_PLUGIN_DATA` is set, wri
 
 **Multi-machine / topics / label are handled entirely inside `notify.sh`** — it routes each project to its forum topic (via `message_thread_id`, looked up from the topic map by the repo's `origin` remote) and prepends the machine label. The orchestrator does NOT build these in: just send the plain `<PROJECT> [<BRANCH>]`-prefixed text below and the script adds the rest. Two machines posting to the same bot never collide — `sendMessage` only appends.
 
-**Sending.** All messages go through one helper — pass the full message text as a single argument:
+**Sending.** All messages go through one helper. Pass the plugin data dir as the **first** argument (exactly as the custom-rules call passes it to `resolve-rules.sh`) and the full message text as the second — `$CLAUDE_PLUGIN_DATA` is NOT reliably present inside a Bash subprocess, so it must be threaded in via the placeholder, not left to the env var:
 
 ```bash
-bash ${CLAUDE_PLUGIN_ROOT}/skills/batch/scripts/notify.sh "<message text>"
+bash ${CLAUDE_PLUGIN_ROOT}/skills/batch/scripts/notify.sh "${CLAUDE_PLUGIN_DATA}" "<message text>"
 ```
+
+Always keep `"${CLAUDE_PLUGIN_DATA}"` quoted so an empty value stays a single (empty) positional argument rather than swallowing the message. If the dir resolves to the "wrong" install sibling (`autopilot-inline` vs `autopilot-loom`), `notify.sh` falls back to searching every `autopilot-*` data dir for a configured token, so a credential placed in either sibling still delivers.
 
 **Context.** At queue start (Step 4) capture, once, the project name and branch for message prefixes:
 
@@ -149,7 +151,7 @@ Capture the log path it outputs (after the leading `queue-log:` prefix). Use thi
 
 IMPORTANT: Always use `${CLAUDE_PLUGIN_ROOT}/skills/batch/scripts/append-queue-log.sh` to write to the log after initialization. Never write to it directly.
 
-**Notify (if `notify` is on — see Telegram Notifications).** Capture `<PROJECT>` and `<BRANCH>` once (the context snippet in that section), then send the **queue start** message: `🚀 <PROJECT> [<BRANCH>] — queue: <M> plan(s)` followed by a newline and the numbered list of plan basenames. Pass the whole thing as one argument to `notify.sh`.
+**Notify (if `notify` is on — see Telegram Notifications).** Capture `<PROJECT>` and `<BRANCH>` once (the context snippet in that section), then send the **queue start** message: `🚀 <PROJECT> [<BRANCH>] — queue: <M> plan(s)` followed by a newline and the numbered list of plan basenames. Pass the whole thing as the **message** (second) argument to `notify.sh`, with `"${CLAUDE_PLUGIN_DATA}"` as the first — see the Sending block above.
 
 ### Step 5. Create TaskCreate items
 

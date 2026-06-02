@@ -5,6 +5,17 @@ The umputun plugins are referenced from upstream and versioned there, not here.
 
 ## autopilot
 
+### 0.3.1 — 2026-06-02
+- Fix Telegram notifications silently never sending. Two root causes: (1)
+  `notify.sh` read `$CLAUDE_PLUGIN_DATA` from the Bash subprocess env, where it is
+  not reliably set — unlike `resolve-rules.sh`, which receives it as an argument.
+  The skill now passes the data dir as `notify.sh`'s first argument. (2) The data
+  dir Claude Code resolves depends on install context (`autopilot-loom` vs
+  `autopilot-inline`); a token placed in the other sibling was invisible.
+  `notify.sh` now falls back to searching every `autopilot-*` data dir for a
+  configured token and reads the topics map from the same dir — so credentials in
+  either sibling deliver, surviving plugin reinstalls without duplicating config.
+
 ### 0.3.0 — 2026-05-29
 - Opt-in Telegram progress notifications for queue runs: queue start, per-plan
   start/result, failures, and final summary — each message tagged with machine
