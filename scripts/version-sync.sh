@@ -1,0 +1,227 @@
+#!/bin/bash
+# version-sync.sh — enforce own-plugin version ↔ changelog consistency
+# usage: version-sync.sh [BASE_REF]
+#   BASE_REF may also be supplied via the $BASE environment variable.
+#
+# Two distinct, complementary responsibilities (see plan Technical Details):
+#
+#   1. STATIC consistency (always runs). For each own plugin the
+#      plugin.json "version" must appear WITHIN that plugin's own changelog
+#      SECTION — not just somewhere in the file. A bare grep is unsound:
+#      "0.1.0" appears under BOTH `## autopilot` and `## kit` in the root
+#      CHANGELOG, so a naive match cross-validates. autopilot/kit sections
+#      are awk-extracted from root CHANGELOG.md (between `## <plugin>` and
+#      the next `## ` header); slicer is checked in plugins/slicer/CHANGELOG.md.
+#
+#   2. DIFF-AWARE enforcement (only when a base ref resolves). This is what
+#      actually encodes the "a change requires a bump" convention. If any
+#      plugins/<own>/** file changed vs base, REQUIRE:
+#        (a) HEAD plugin.json "version" is SEMVER-GREATER than at base
+#            (unchanged FAILS, downgrade FAILS); AND
+#        (b) that exact new version string appears in the plugin's changelog
+#            section in the diff (a bump with no changelog line FAILS; a
+#            changelog line with no bump FAILS via (a)).
+#      The guard keys off plugins/<x>/ paths ONLY — editing root
+#      README/CLAUDE.md must NOT trip it.
+#
+#   $BASE resolution: explicit arg/env first; else `git merge-base
+#   origin/master HEAD`. When no base resolves, fall back to static mode and
+#   LOG that diff-aware enforcement was SKIPPED — never a silent pass.
+#
+# Exits 0 when clean; non-zero with a precise per-plugin message. bash + jq
+# + awk + git only.
+
+set -euo pipefail
+
+root="$(git -C "$(dirname "$0")" rev-parse --show-toplevel 2>/dev/null || pwd)"
+own="autopilot kit slicer"
+
+errors=0
+err() {
+    echo "version-sync: $*" >&2
+    errors=$((errors + 1))
+}
+log() {
+    echo "version-sync: $*"
+}
+
+# Extract the changelog section for a plugin from a CHANGELOG file: the lines
+# from `## <plugin>` up to (but excluding) the next `## ` header.
+#   $1 = changelog file, $2 = section header name
+section() {
+    awk -v hdr="## $2" '
+        $0 == hdr { capture = 1; next }
+        capture && /^## / { exit }
+        capture { print }
+    ' "$1"
+}
+
+plugin_version() {
+    # version from a plugin.json on disk; $1 = plugin name
+    jq -r '.version // ""' "$root/plugins/$1/.claude-plugin/plugin.json"
+}
+
+changelog_file() {
+    # Which changelog holds a plugin's "section", encoded as "file|header".
+    #   - autopilot/kit live in the SHARED root CHANGELOG under a `## <plugin>`
+    #     header; their section is awk-extracted to avoid cross-section false
+    #     matches (0.1.0 appears under both).
+    #   - slicer has its OWN dedicated changelog file; the entire file IS its
+    #     section, so header is the empty sentinel "" (whole-file match).
+    case "$1" in
+        slicer) echo "$root/plugins/slicer/CHANGELOG.md|" ;;
+        *)      echo "$root/CHANGELOG.md|$1" ;;
+    esac
+}
+
+# literal (fixed-string) substring test, no regex surprises from dots
+contains() { case "$2" in *"$1"*) return 0 ;; *) return 1 ;; esac; }
+
+# semver compare: returns 0 if $1 > $2 (strictly greater), else 1.
+# Pure bash via sort -V; rejects equal.
+semver_gt() {
+    [ "$1" != "$2" ] || return 1
+    local greatest
+    greatest="$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n1)"
+    [ "$greatest" = "$1" ]
+}
+
+# ---------------------------------------------------------------------------
+# 1. STATIC consistency (always)
+# ---------------------------------------------------------------------------
+for name in $own; do
+    ver="$(plugin_version "$name")"
+    if [ -z "$ver" ]; then
+        err "$name: plugin.json \"version\" is missing or empty"
+        continue
+    fi
+    spec="$(changelog_file "$name")"
+    file="${spec%%|*}"
+    hdr="${spec##*|}"
+    if [ ! -f "$file" ]; then
+        err "$name: changelog not found: $file"
+        continue
+    fi
+    if [ -n "$hdr" ]; then
+        sec="$(section "$file" "$hdr")"
+        if [ -z "$sec" ]; then
+            err "$name: changelog section \"## $hdr\" not found in $file"
+            continue
+        fi
+        where="## $hdr in $(basename "$file")"
+    else
+        # dedicated changelog — whole file is the plugin's section
+        sec="$(cat "$file")"
+        where="$(basename "$file")"
+    fi
+    if ! contains "$ver" "$sec"; then
+        err "$name: version $ver not found in its changelog section ($where)"
+    fi
+done
+
+# ---------------------------------------------------------------------------
+# 2. DIFF-AWARE enforcement (when a base ref resolves)
+# ---------------------------------------------------------------------------
+base="${1:-${BASE:-}}"
+zero_sha="0000000000000000000000000000000000000000"
+
+# treat an all-zero / empty / unresolvable SHA as "no base"
+if [ -n "$base" ]; then
+    if [ "$base" = "$zero_sha" ] || ! git -C "$root" rev-parse --verify --quiet "$base^{commit}" >/dev/null 2>&1; then
+        log "supplied BASE \"$base\" does not resolve to a commit — treating as no base"
+        base=""
+    fi
+fi
+
+# last-resort local fallback
+if [ -z "$base" ]; then
+    base="$(git -C "$root" merge-base origin/master HEAD 2>/dev/null || true)"
+    if [ -n "$base" ]; then
+        log "no BASE supplied; using local fallback merge-base origin/master HEAD = $base"
+    fi
+fi
+
+if [ -z "$base" ]; then
+    log "DIFF-AWARE enforcement SKIPPED — no base ref resolvable (ran static checks only)"
+else
+    # changed files vs base, restricted to plugins/<x>/ paths
+    changed="$(git -C "$root" diff --name-only "$base"...HEAD -- 'plugins/' 2>/dev/null || true)"
+
+    for name in $own; do
+        # did any file under THIS plugin change? key off plugins/<x>/ ONLY.
+        if ! printf '%s\n' "$changed" | grep -q "^plugins/$name/"; then
+            continue
+        fi
+
+        head_ver="$(plugin_version "$name")"
+        pj_path="plugins/$name/.claude-plugin/plugin.json"
+        base_ver="$(git -C "$root" show "$base:$pj_path" 2>/dev/null | jq -r '.version // ""' 2>/dev/null || true)"
+
+        if [ -z "$base_ver" ]; then
+            # plugin.json absent at base (new plugin) — require a non-empty HEAD version
+            if [ -z "$head_ver" ]; then
+                err "$name: changed under plugins/$name/ but plugin.json has no version at HEAD"
+                continue
+            fi
+            log "$name: new at base (no version to compare); requiring changelog entry for $head_ver"
+        else
+            # (a) HEAD version must be strictly semver-greater than base version
+            if ! semver_gt "$head_ver" "$base_ver"; then
+                if [ "$head_ver" = "$base_ver" ]; then
+                    err "$name: plugins/$name/ changed but version is UNCHANGED ($head_ver) — a change requires a version bump"
+                else
+                    err "$name: plugins/$name/ changed but version went $base_ver → $head_ver (not semver-greater) — downgrade/non-bump not allowed"
+                fi
+                continue
+            fi
+        fi
+
+        # (b) the exact NEW version string must appear in this plugin's
+        #     changelog section IN THE DIFF (an added line).
+        spec="$(changelog_file "$name")"
+        cl_path=""
+        case "$name" in
+            slicer) cl_path="plugins/slicer/CHANGELOG.md" ;;
+            *)      cl_path="CHANGELOG.md" ;;
+        esac
+        hdr="${spec##*|}"
+
+        # added lines (leading '+', excluding the '+++' file header) of this
+        # changelog file in the diff. awk avoids BSD/GNU grep divergence over
+        # a leading literal '+' (a regex repetition operator).
+        added="$(git -C "$root" diff "$base"...HEAD -- "$cl_path" 2>/dev/null \
+                    | awk 'substr($0,1,1)=="+" && substr($0,1,3)!="+++" { print substr($0,2) }' || true)"
+
+        if ! contains "$head_ver" "$added"; then
+            err "$name: version bumped to $head_ver but no added changelog line contains \"$head_ver\" in $cl_path (## $hdr section)"
+            continue
+        fi
+
+        # belt-and-suspenders: the new version must ALSO land inside the
+        # plugin's own section at HEAD (guards against an added line that
+        # happens to sit under a different plugin's header in the shared
+        # root CHANGELOG). For slicer (dedicated file, empty header) the whole
+        # file is the section.
+        if [ -n "$hdr" ]; then
+            head_sec="$(git -C "$root" show "HEAD:$cl_path" 2>/dev/null | awk -v h="## $hdr" '
+                $0 == h { c = 1; next } c && /^## / { exit } c { print }' || true)"
+            sec_label="## $hdr"
+        else
+            head_sec="$(git -C "$root" show "HEAD:$cl_path" 2>/dev/null || true)"
+            sec_label="$(basename "$cl_path")"
+        fi
+        if ! contains "$head_ver" "$head_sec"; then
+            err "$name: version $head_ver does not appear inside its own changelog section ($sec_label) at HEAD"
+            continue
+        fi
+
+        log "$name: bump $base_ver → $head_ver with matching changelog entry — OK"
+    done
+fi
+
+if [ "$errors" -gt 0 ]; then
+    echo "version-sync: $errors violation(s) found" >&2
+    exit 1
+fi
+
+echo "version-sync: OK"

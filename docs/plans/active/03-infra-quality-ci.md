@@ -183,12 +183,12 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
 - Create: `scripts/version-sync.sh`
 - Create: `scripts/link-check.sh`
 
-- [ ] implement `drift-guard.sh` (plugins/ == exactly autopilot+kit+slicer; umputun entries stay git-subdir)
-- [ ] implement `version-sync.sh` with BOTH modes (see Technical Details): (1) **static** section-scoped matching — autopilot/kit versions checked within their own `## <plugin>`→next-`## ` block in root `CHANGELOG.md` (awk-extracted), slicer in `plugins/slicer/CHANGELOG.md`; (2) **diff-aware enforcement** when a base ref exists — if `plugins/<own>/**` changed vs base, REQUIRE the HEAD `plugin.json` `version` to be **semver-greater than base** (unchanged or downgraded FAILS) AND a changelog line containing that exact new version under the plugin's section (else fall back to static and `log` that enforcement was skipped). Key off `plugins/<x>/` paths only
-- [ ] implement `link-check.sh` (relative markdown links resolve in-repo; skip `http(s)://`, `mailto:`, `#anchor`; exclude `docs/plans/`)
-- [ ] verify: `shellcheck` clean on all three
-- [ ] test (pass): all three exit 0 against the real repo
-- [ ] test (fail): temp fixtures — a vendored `plugins/brainstorm/`; a kit version present only in autopilot's CHANGELOG section (proves section-scoping rejects the cross-section false match); a simulated diff where `plugins/autopilot/**` changed but `plugin.json` `version` did NOT (diff-aware fails it); a diff that bumps `version` but adds **no** changelog line containing that new version (fails); a diff that bumps `version` AND adds a matching changelog line (passes — the positive control); a diff that *downgrades* `version` (fails the required semver-greater check); a dead relative link — each produces the expected exit + clear message — must pass before Task 4
+- [x] implement `drift-guard.sh` (plugins/ == exactly autopilot+kit+slicer; umputun entries stay git-subdir)
+- [x] implement `version-sync.sh` with BOTH modes (see Technical Details): (1) **static** section-scoped matching — autopilot/kit versions checked within their own `## <plugin>`→next-`## ` block in root `CHANGELOG.md` (awk-extracted), slicer in `plugins/slicer/CHANGELOG.md`; (2) **diff-aware enforcement** when a base ref exists — if `plugins/<own>/**` changed vs base, REQUIRE the HEAD `plugin.json` `version` to be **semver-greater than base** (unchanged or downgraded FAILS) AND a changelog line containing that exact new version under the plugin's section (else fall back to static and `log` that enforcement was skipped). Key off `plugins/<x>/` paths only
+- [x] implement `link-check.sh` (relative markdown links resolve in-repo; skip `http(s)://`, `mailto:`, `#anchor`; exclude `docs/plans/`)
+- [x] verify: `shellcheck` clean on all three
+- [x] test (pass): all three exit 0 against the real repo
+- [x] test (fail): temp fixtures — a vendored `plugins/brainstorm/`; a kit version present only in autopilot's CHANGELOG section (proves section-scoping rejects the cross-section false match); a simulated diff where `plugins/autopilot/**` changed but `plugin.json` `version` did NOT (diff-aware fails it); a diff that bumps `version` but adds **no** changelog line containing that new version (fails); a diff that bumps `version` AND adds a matching changelog line (passes — the positive control); a diff that *downgrades* `version` (fails the required semver-greater check); a dead relative link — each produces the expected exit + clear message — must pass before Task 4
 
 ### Task 4: bats unit-test suite for shell scripts
 
