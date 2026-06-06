@@ -182,11 +182,11 @@ route back up for replies.
 - Create: `src/index.ts`
 - Create: `test/health.test.ts`
 
-- [ ] init the separate `loom-relay` repo (git init) with `package.json` (deps: `wrangler`, `typescript`, `vitest`, `@cloudflare/vitest-pool-workers`, **`@modelcontextprotocol/sdk`** for the MCP server, **`jose`** for CF Access JWT/JWKS verification)
-- [ ] write `wrangler.toml` declaring the Worker, **exactly one** Durable Object class (`ProjectQueue`) + its migration, and a plain `PROJECT_ROUTES` JSON var (`project → {chat_id, message_thread_id}`; no KV binding; MCP is stateless → no session DO); `tsconfig.json`; `vitest.config.ts` wired to `@cloudflare/vitest-pool-workers`
-- [ ] create minimal `src/index.ts` fetch handler responding `200` on `GET /health`
-- [ ] write `test/health.test.ts` asserting `/health` → 200 (proves the Miniflare harness runs)
-- [ ] run `npm test` — green before Task 2
+- [x] init the separate `loom-relay` repo (git init) with `package.json` (deps: `wrangler`, `typescript`, `vitest`, `@cloudflare/vitest-pool-workers`, **`@modelcontextprotocol/sdk`** for the MCP server, **`jose`** for CF Access JWT/JWKS verification)
+- [x] write `wrangler.toml` declaring the Worker, **exactly one** Durable Object class (`ProjectQueue`) + its migration (`new_sqlite_classes` — SQLite backend required on Free plan), and a plain `PROJECT_ROUTES` JSON var (`project → {chat_id, message_thread_id}`; no KV binding; MCP is stateless → no session DO); `tsconfig.json`; `vitest.config.ts` wired to `@cloudflare/vitest-pool-workers` (vitest-4 API: `cloudflareTest` plugin, not the removed `defineWorkersConfig`)
+- [x] create minimal `src/index.ts` fetch handler responding `200` on `GET /health`
+- [x] write `test/health.test.ts` asserting `/health` → 200 (proves the Miniflare harness runs)
+- [x] run `npm test` — green before Task 2
 
 ### Task 2: ProjectQueue Durable Object (queue + cursor + dedup + since)
 
@@ -195,11 +195,11 @@ route back up for replies.
 - Modify: `src/index.ts`
 - Create: `test/project-queue.test.ts`
 
-- [ ] implement `ProjectQueue` DO with the pinned field contract (Technical Details): `enqueue({id, cmd, from, ts})` dedup on `id`; `poll({since, ack_through})` = drop `id <= ack_through`, then return `ts >= since` in ascending-`id` order; `ack({ack_through})` = drop `id <= ack_through`, return nothing (backs the `ack_commands` tool's terminal-case confirm)
-- [ ] persist `{queue, ackedCursor, seenSet}` in `this.ctx.storage` AND hydrate it before serving (`blockConcurrencyWhile` in the constructor or read-through per method); wire the DO class export in `src/index.ts`
-- [ ] write tests: enqueue then poll returns it; duplicate `id` enqueue ignored; `ack_through` drops acked (`id <=`); `ack({ack_through})` advances cursor without returning; `since` drops stale; ordering is ascending `id`
-- [ ] write tests for empty-state, re-poll-after-ack (idempotency), AND **state survival across a simulated DO restart** (vitest-pool-workers `runInDurableObject` / instance disposal) — proves hydration
-- [ ] run `npm test` — green before Task 3
+- [x] implement `ProjectQueue` DO with the pinned field contract (Technical Details): `enqueue({id, cmd, from, ts})` dedup on `id`; `poll({since, ack_through})` = drop `id <= ack_through`, then return `ts >= since` in ascending-`id` order; `ack({ack_through})` = drop `id <= ack_through`, return nothing (backs the `ack_commands` tool's terminal-case confirm)
+- [x] persist `{queue, ackedCursor, seenSet}` in `this.ctx.storage` AND hydrate it before serving (`blockConcurrencyWhile` in the constructor or read-through per method); wire the DO class export in `src/index.ts` — RPC `DurableObject` base class (`cloudflare:workers`); methods called via stub RPC
+- [x] write tests: enqueue then poll returns it; duplicate `id` enqueue ignored; `ack_through` drops acked (`id <=`); `ack({ack_through})` advances cursor without returning; `since` drops stale; ordering is ascending `id`
+- [x] write tests for empty-state, re-poll-after-ack (idempotency), AND **state survival across a simulated DO restart** (vitest-pool-workers `abortAllDurableObjects()` forces cold-start) — proves hydration
+- [x] run `npm test` — green before Task 3
 
 ### Task 3: Telegram webhook endpoint (/tg/webhook)
 
@@ -209,11 +209,11 @@ route back up for replies.
 - Create: `src/lib/routes.ts`
 - Create: `test/webhook.test.ts`
 
-- [ ] implement `POST /tg/webhook`: validate `X-Telegram-Bot-Api-Secret-Token` (401 on mismatch); parse update; dedup by `update_id`; authz `from.id` against `ALLOWLIST`; resolve project by reverse-matching `(chat.id, message_thread_id)` via `src/lib/routes.ts`; parse `/stop`,`/status` (+`@bot`/bare); **`await` the `enqueue` to the project DO BEFORE returning 200** (enqueue is on the ack path — a premature 200 loses the command); only non-critical side effects (if any) via `ctx.waitUntil`
-- [ ] implement `routes.ts` parsing the plain `PROJECT_ROUTES` JSON var, exposing both directions: `routeFor(project) → {chat_id, message_thread_id}` (for `post_status`) and `projectFor(chat_id, message_thread_id) → project` (for webhook intake); capture `message.date` as the enqueued `ts`
-- [ ] write tests: wrong/missing secret_token → **401**; non-allowlisted `from.id` → **200 drop** (assert NOT 403, so Telegram won't redeliver); known topic maps to project + enqueues; `/stop`,`/status`,`@bot`,bare parsed; unknown text ignored
-- [ ] write tests: duplicate `update_id` is a no-op; malformed update doesn't 500
-- [ ] run `npm test` — green before Task 4
+- [x] implement `POST /tg/webhook`: validate `X-Telegram-Bot-Api-Secret-Token` (401 on mismatch); parse update; dedup by `update_id`; authz `from.id` against `ALLOWLIST`; resolve project by reverse-matching `(chat.id, message_thread_id)` via `src/lib/routes.ts`; parse `/stop`,`/status` (+`@bot`/bare); **`await` the `enqueue` to the project DO BEFORE returning 200** (enqueue is on the ack path — a premature 200 loses the command); only non-critical side effects (if any) via `ctx.waitUntil`
+- [x] implement `routes.ts` parsing the plain `PROJECT_ROUTES` JSON var, exposing both directions: `routeFor(project) → {chat_id, message_thread_id}` (for `post_status`) and `projectFor(chat_id, message_thread_id) → project` (for webhook intake); capture `message.date` as the enqueued `ts`
+- [x] write tests: wrong/missing secret_token → **401**; non-allowlisted `from.id` → **200 drop** (assert NOT 403, so Telegram won't redeliver); known topic maps to project + enqueues; `/stop`,`/status`,`@bot`,bare parsed; unknown text ignored
+- [x] write tests: duplicate `update_id` is a no-op; malformed update doesn't 500
+- [x] run `npm test` — green before Task 4
 
 ### Task 4: MCP server (/mcp) — poll_commands + ack_commands + post_status — behind Cloudflare Access
 
@@ -223,11 +223,11 @@ route back up for replies.
 - Create: `src/lib/cf-access.ts`
 - Create: `test/mcp.test.ts`
 
-- [ ] implement a **stateless** Streamable HTTP MCP server at `/mcp` using `@modelcontextprotocol/sdk` + a thin Workers `fetch` adapter (JSON responses, no SSE session, no extra DO), exposing `poll_commands(project, since, ack_through)` (→ project DO `poll`), `ack_commands(project, ack_through)` (→ project DO `ack`), and `post_status(project, text)` (→ resolve `PROJECT_ROUTES[project]` `{chat_id, message_thread_id}`, then Telegram `sendMessage`; error if project unmapped)
-- [ ] implement `src/lib/cf-access.ts` (using `jose`) that **verifies the Access-injected CF Access JWT** — fetch team JWKS (cached), verify `Cf-Access-Jwt-Assertion` signature AND `aud` claim against the app's AUD tag; reject on missing/invalid/aud-mismatch (header presence alone is NOT enough). The client presents `CF-Access-Client-Id`/`CF-Access-Client-Secret`; the Worker does NOT trust those directly — only the edge-injected assertion
-- [ ] write tests: `poll_commands` returns/acks via the DO; `ack_commands` advances the cursor (a subsequent poll omits the acked ids); `post_status` calls Telegram `sendMessage` with the resolved `chat_id`+`message_thread_id` (mock outbound `fetch`, assert payload shape) and errors on an unmapped project; tool input schemas validate
-- [ ] write tests: `/mcp` rejected with no JWT, bad-signature JWT, and wrong-`aud` JWT (mock the JWKS endpoint); accepted with a valid Access-injected assertion
-- [ ] run `npm test` — green before Task 5
+- [x] implement a **stateless** Streamable HTTP MCP server at `/mcp` using `@modelcontextprotocol/sdk` + a thin Workers `fetch` adapter (JSON responses, no SSE session, no extra DO), exposing `poll_commands(project, since, ack_through)` (→ project DO `poll`), `ack_commands(project, ack_through)` (→ project DO `ack`), and `post_status(project, text)` (→ resolve `PROJECT_ROUTES[project]` `{chat_id, message_thread_id}`, then Telegram `sendMessage`; error if project unmapped). NOTE: used the SDK's protocol constants/`ErrorCode` + a hand-rolled stateless JSON-RPC dispatcher — the SDK's `StreamableHTTPServerTransport` is Node-`req/res`-oriented and unsuitable for a Workers `fetch` adapter
+- [x] implement `src/lib/cf-access.ts` (using `jose`) that **verifies the Access-injected CF Access JWT** — fetch team JWKS (cached), verify `Cf-Access-Jwt-Assertion` signature AND `aud` claim against the app's AUD tag; reject on missing/invalid/aud-mismatch (header presence alone is NOT enough). The client presents `CF-Access-Client-Id`/`CF-Access-Client-Secret`; the Worker does NOT trust those directly — only the edge-injected assertion
+- [x] write tests: `poll_commands` returns/acks via the DO; `ack_commands` advances the cursor (a subsequent poll omits the acked ids); `post_status` calls Telegram `sendMessage` with the resolved `chat_id`+`message_thread_id` (mock outbound `fetch`, assert payload shape) and errors on an unmapped project; tool input schemas validate
+- [x] write tests: `/mcp` rejected with no JWT, bad-signature JWT, and wrong-`aud` JWT (mock the JWKS endpoint); accepted with a valid Access-injected assertion
+- [x] run `npm test` — green before Task 5
 
 ### Task 5: Secrets/config wiring + setup documentation
 
@@ -236,25 +236,25 @@ route back up for replies.
 - Create: `docs/SETUP.md`
 - Modify: `wrangler.toml`
 
-- [ ] document secrets via `wrangler secret put` (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_SECRET_TOKEN`, `ALLOWLIST`) and the `PROJECT_ROUTES` plain JSON env var (`project → {chat_id, message_thread_id}`) in `wrangler.toml`; ensure no secret is committed
-- [ ] write `docs/SETUP.md`: create the bot, `setWebhook` with `secret_token`, `wrangler deploy`, create the Cloudflare Access application for `/mcp` + issue a **service token**, fill allowlist + `PROJECT_ROUTES`, and how a machine adds the MCP server to `.mcp.json` sending `CF-Access-Client-Id`/`CF-Access-Client-Secret` headers via `${...}` env-expansion (no secret committed; cross-link the autopilot plan)
-- [ ] write `README.md` (what loom-relay is, architecture, link to SETUP)
-- [ ] verify docs reference only `wrangler`/`jq`-level tooling and contain no real secrets
-- [ ] run `npm test` — green before Task 6
+- [x] document secrets via `wrangler secret put` (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_SECRET_TOKEN`, `ALLOWLIST`) and the `PROJECT_ROUTES` plain JSON env var (`project → {chat_id, message_thread_id}`) in `wrangler.toml`; ensure no secret is committed (also added `CF_ACCESS_TEAM_DOMAIN`/`CF_ACCESS_AUD` vars, fail-closed when empty)
+- [x] write `docs/SETUP.md`: create the bot, `setWebhook` with `secret_token`, `wrangler deploy`, create the Cloudflare Access application for `/mcp` + issue a **service token**, fill allowlist + `PROJECT_ROUTES`, and how a machine adds the MCP server to `.mcp.json` sending `CF-Access-Client-Id`/`CF-Access-Client-Secret` headers via `${...}` env-expansion (no secret committed; cross-link the autopilot plan)
+- [x] write `README.md` (what loom-relay is, architecture, link to SETUP)
+- [x] verify docs reference only `wrangler`/`jq`-level tooling and contain no real secrets (account id placeholdered; secret scan clean)
+- [x] run `npm test` — green before Task 6
 
 ### Task 6: Verify acceptance criteria
 
-- [ ] all Overview requirements implemented (single webhook consumer; per-project DO; MCP `poll_commands`/`post_status`; CF Access gate; allowlist; `secret_token`; `since`/`update_id` dedup)
-- [ ] run full `npm test` (vitest-pool-workers) — all green
-- [ ] `wrangler dev` smoke: simulate a webhook → DO enqueue → `poll_commands` returns it → ack removes it; `post_status` → mocked/real `sendMessage`
-- [ ] confirm (unit-level) secret_token mismatch → 401, non-allowlisted user → 200 drop, and the in-Worker CF Access JWT verification rejects no/bad/wrong-`aud` tokens. NOTE: true edge enforcement by Cloudflare Access is only observable post-deploy (`wrangler dev` does not run the Access edge) — verified in Post-Completion
-- [ ] confirm no secrets are present in the repo (`git grep` for token-like strings)
+- [x] all Overview requirements implemented (single webhook consumer; per-project DO; MCP `poll_commands`/`post_status`; CF Access gate; allowlist; `secret_token`; `since`/`update_id` dedup)
+- [x] run full `npm test` (vitest-pool-workers) — all green (33 tests, 4 files)
+- [x] `wrangler dev` smoke equivalent: the vitest-pool-workers suite runs in the REAL workerd runtime + real DOs and already exercises webhook → DO enqueue → `poll_commands` → `ack` and `post_status` → `sendMessage` (mocked outbound) — strictly stronger than a `wrangler dev` curl; also `wrangler deploy --dry-run` bundles clean (225 KiB / 46 KiB gzip; jose + MCP SDK)
+- [x] confirm (unit-level) secret_token mismatch → 401, non-allowlisted user → 200 drop, and the in-Worker CF Access JWT verification rejects no/bad/wrong-`aud` tokens. NOTE: true edge enforcement by Cloudflare Access is only observable post-deploy (`wrangler dev` does not run the Access edge) — verified in Post-Completion
+- [x] confirm no secrets are present in the repo (scanned working tree for token/account-id/bot-token patterns — clean; creds live in `~/.config/loom-relay/cf.env` outside the repo)
 
 ### Task 7: Update documentation
 
-- [ ] finalize `README.md`/`docs/SETUP.md` in the relay repo
-- [ ] add a note in `loom-marketplace` `CLAUDE.md`/`README.md` that two-way Telegram control lives in the separate `loom-relay` component (cross-reference)
-- [ ] move this plan to `docs/plans/completed/` (skip if executed via autopilot — it auto-moves on success)
+- [x] finalize `README.md`/`docs/SETUP.md` in the relay repo
+- [x] add a note in `loom-marketplace` `CLAUDE.md`/`README.md` that two-way Telegram control lives in the separate `loom-relay` component (cross-reference)
+- [x] move this plan to `docs/plans/completed/` (executed directly, not via autopilot — moved by hand)
 
 ## Post-Completion
 

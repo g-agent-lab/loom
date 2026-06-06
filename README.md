@@ -34,6 +34,14 @@ Then install whatever you want:
 | `skill-eval` | Forces skill evaluation before every response | umputun/cc-thingz |
 | `workflow` | Session helpers — learn, clarify, wrong, clipboard copy | umputun/cc-thingz |
 
+## Related components
+
+`autopilot`'s **two-way Telegram control** (`/stop` · `/status` during autonomous
+runs) is served by **`loom-relay`** — a separate Cloudflare Worker (its own sibling
+repo, not a plugin here). It is the single webhook-owning hub for the bot and relays
+commands per project to machines over a remote, Cloudflare-Access-gated MCP server.
+See `loom-relay/README.md` and `loom-relay/docs/SETUP.md`.
+
 ## How the umputun plugins are included
 
 They are **not** vendored into this repo. Each is listed in

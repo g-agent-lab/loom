@@ -3,6 +3,11 @@
 Personal Claude Code plugin marketplace. Three own plugins (`autopilot`, `kit`,
 `slicer`) plus seven plugins referenced from `umputun/cc-thingz`.
 
+> **`autopilot` two-way Telegram control** (`/stop` · `/status`) lives in a **separate
+> component**, not in this repo: **`loom-relay`** — a Cloudflare Worker (single webhook
+> hub + per-project, CF-Access-gated MCP relay) in its own sibling repo. Machine-side
+> MCP wiring is in the `autopilot` plugin (plan `02-autopilot-v0.4.md`).
+
 ## Conventions
 
 - **Own plugins only.** Edit `plugins/autopilot/`, `plugins/kit/`, and `plugins/slicer/`.
