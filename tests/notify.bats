@@ -191,6 +191,46 @@ payload_value() {
     [ "$output" = "0" ]
 }
 
+@test "empty data-dir arg falls back to CLAUDE_CONFIG_DIR sibling search" {
+    # No data-dir argument at all (first arg empty) and no env token. The script
+    # must derive the plugins/data root from CLAUDE_CONFIG_DIR and find the token
+    # planted in a sibling autopilot-* dir there.
+    CC_ROOT="${TMP}/cc-config"
+    SIB="${CC_ROOT}/plugins/data/autopilot-loom"
+    mkdir -p "$SIB"
+    write_conf "$SIB" \
+        "TELEGRAM_BOT_TOKEN=CFG:tok" \
+        "TELEGRAM_CHAT_ID=-100CFG"
+    export CLAUDE_CONFIG_DIR="$CC_ROOT"
+
+    # pass an EMPTY first arg so data_root resolves via CLAUDE_CONFIG_DIR (the
+    # notify.sh:70-85 branch: data_root=${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/data)
+    run "$SUT_NOTIFY" "" "config-dir fallback"
+    [ "$status" -eq 0 ]
+    run curl_called
+    [ "$status" -eq 0 ]
+    curl_payload | grep -q 'botCFG:tok/sendMessage'
+    [ "$(payload_value chat_id)" = "-100CFG" ]
+    [ "$(payload_value text)" = "config-dir fallback" ]
+}
+
+@test "topic falls back to repo dir name when git origin is absent" {
+    write_conf "$DATA_DIR" \
+        "TELEGRAM_BOT_TOKEN=123:AAtoken" \
+        "TELEGRAM_CHAT_ID=-1009999"
+    # a git repo with NO origin remote → key falls back to the repo dir name
+    # (notify.sh:113). Map that name to a topic id.
+    REPO="${TMP}/myproj"
+    mkdir -p "$REPO"
+    git -C "$REPO" init -q
+    printf 'myproj = 123\n' > "${DATA_DIR}/telegram-topics.conf"
+
+    run bash -c "cd '$REPO' && '$SUT_NOTIFY' '$DATA_DIR' 'dirname fallback'"
+    [ "$status" -eq 0 ]
+    [ "$(payload_value message_thread_id)" = "123" ]
+    [ "$(payload_value chat_id)" = "-1009999" ]
+}
+
 @test "explicit TELEGRAM_TOPIC_ID env wins over the map lookup" {
     write_conf "$DATA_DIR" \
         "TELEGRAM_BOT_TOKEN=123:AAtoken" \

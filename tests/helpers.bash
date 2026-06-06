@@ -19,6 +19,12 @@ SUT_NOTIFY="${REPO_ROOT}/plugins/autopilot/skills/batch/scripts/notify.sh"
 SUT_DETECT_STACK="${REPO_ROOT}/plugins/kit/skills/greenfield/scripts/detect-stack.sh"
 SUT_DETECT_MODE="${REPO_ROOT}/plugins/kit/skills/greenfield/scripts/detect-mode.sh"
 
+# Absolute paths to the top-level CHECK scripts (the marketplace guards).
+SUT_VALIDATE="${REPO_ROOT}/scripts/validate-marketplace.sh"
+SUT_DRIFT="${REPO_ROOT}/scripts/drift-guard.sh"
+SUT_VERSYNC="${REPO_ROOT}/scripts/version-sync.sh"
+SUT_LINKCHECK="${REPO_ROOT}/scripts/link-check.sh"
+
 # make_tmpdir — create a fresh scratch dir for the current test and export it
 # as $TMP. Lives under BATS_TEST_TMPDIR (auto-cleaned by bats) but we also
 # remove it ourselves in teardown for good measure.

@@ -17,6 +17,7 @@ Then install whatever you want:
 ```
 /plugin install autopilot@loom
 /plugin install kit@loom
+/plugin install slicer@loom
 /plugin install planning@loom
 ```
 
@@ -84,6 +85,9 @@ shellcheck $(git ls-files '*.sh')
 bats tests/
 ```
 
+Run `shellcheck` from the repo root so it honors the root [`.shellcheckrc`](.shellcheckrc)
+(it suppresses the SC2012 `ls`-vs-`find` info finding for a kit detection script).
+
 `.github/workflows/ci.yml` runs all of the above on every push and pull request and
 fails the build on any non-zero exit. In CI, `version-sync.sh` runs in diff-aware mode:
 it diffs against the base ref and requires any change under `plugins/<own>/**` to bump
@@ -92,5 +96,5 @@ with no base ref, it falls back to static consistency checks.
 
 ## License
 
-`autopilot` and `kit` are MIT (see [LICENSE](LICENSE)). The umputun plugins are MIT and
-remain under their original copyright in [umputun/cc-thingz](https://github.com/umputun/cc-thingz).
+`autopilot`, `kit`, and `slicer` are MIT (see [LICENSE](LICENSE)). The umputun plugins are
+MIT and remain under their original copyright in [umputun/cc-thingz](https://github.com/umputun/cc-thingz).

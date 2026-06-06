@@ -43,7 +43,10 @@ jobs:
           sudo apt-get install -y shellcheck jq
 
       - name: Install bats
-        uses: bats-core/bats-action@v3
+        # Pin a real release tag: bats-core/bats-action publishes only
+        # full-semver tags (…, 3.0.1, 4.0.0) — there is NO moving v3/v4 tag,
+        # so `@v3` does not resolve and aborts the whole job.
+        uses: bats-core/bats-action@4.0.0
 
       - name: validate-marketplace
         run: ./scripts/validate-marketplace.sh

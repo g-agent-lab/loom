@@ -1,6 +1,15 @@
-# Repo-root ShellCheck config (honored from repo root since ShellCheck v0.7).
+# Repo-root ShellCheck config (honored only when shellcheck runs FROM the repo
+# root, supported since ShellCheck v0.7 — CI and the README commands both do).
+#
 # SC2012: "Use find instead of ls" — info-level false positive for the simple
-# existence checks in our scripts (e.g. `ls <globs> | head -1 | grep -q .` in
-# plugins/kit/.../detect-mode.sh). `find` is overkill there and editing that
-# kit script would trip version-sync's diff-aware bump guard for a cosmetic lint.
+# existence check `ls <globs> | head -1 | grep -q .` in
+# plugins/kit/.../detect-mode.sh. `find` is overkill there, and editing that kit
+# script would trip version-sync's diff-aware bump guard for a cosmetic lint.
+#
+# Tradeoff (accepted): this is a repo-WIDE disable, so it silences SC2012
+# everywhere, not just the one offending line. A scoped `# shellcheck
+# disable=SC2012` directive inside detect-mode.sh would be narrower, but that
+# edit lives under plugins/** and would demand a version bump for pure lint
+# churn. The blast radius is acceptable: no other tracked script uses `ls` in a
+# way SC2012 would (correctly) flag, so nothing real is being hidden.
 disable=SC2012

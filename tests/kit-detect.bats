@@ -47,6 +47,14 @@ run_mode()  { run bash -c "cd '$PROJ' && '$SUT_DETECT_MODE'"; }
     [ "$output" = "python-fastapi" ]
 }
 
+@test "detect-stack: pyproject with uvicorn (no fastapi) -> python-fastapi" {
+    # uvicorn is the alternate fastapi marker (detect-stack.sh:19 grep fastapi|uvicorn)
+    printf '[project]\ndependencies = ["uvicorn"]\n' > "${PROJ}/pyproject.toml"
+    run_stack
+    [ "$status" -eq 0 ]
+    [ "$output" = "python-fastapi" ]
+}
+
 @test "detect-stack: pyproject with aiogram -> python-aiogram" {
     printf '[project]\ndependencies = ["aiogram"]\n' > "${PROJ}/pyproject.toml"
     run_stack
@@ -77,6 +85,22 @@ run_mode()  { run bash -c "cd '$PROJ' && '$SUT_DETECT_MODE'"; }
 
 @test "detect-stack: package.json with commander -> typescript-node-cli" {
     printf '{ "dependencies": { "commander": "^12" } }\n' > "${PROJ}/package.json"
+    run_stack
+    [ "$status" -eq 0 ]
+    [ "$output" = "typescript-node-cli" ]
+}
+
+@test "detect-stack: package.json with execa -> typescript-node-cli" {
+    # execa is an alternate node-cli marker (detect-stack.sh:36)
+    printf '{ "dependencies": { "execa": "^8" } }\n' > "${PROJ}/package.json"
+    run_stack
+    [ "$status" -eq 0 ]
+    [ "$output" = "typescript-node-cli" ]
+}
+
+@test "detect-stack: package.json with @iarna/toml -> typescript-node-cli" {
+    # @iarna/toml is an alternate node-cli marker (detect-stack.sh:36)
+    printf '{ "dependencies": { "@iarna/toml": "^2" } }\n' > "${PROJ}/package.json"
     run_stack
     [ "$status" -eq 0 ]
     [ "$output" = "typescript-node-cli" ]
@@ -133,6 +157,34 @@ run_mode()  { run bash -c "cd '$PROJ' && '$SUT_DETECT_MODE'"; }
 
 @test "detect-mode: go.mod marker -> brownfield" {
     printf 'module x\n' > "${PROJ}/go.mod"
+    run_mode
+    [ "$status" -eq 0 ]
+    [ "$output" = "brownfield" ]
+}
+
+@test "detect-mode: eslint.config.* marker -> brownfield" {
+    printf 'export default []\n' > "${PROJ}/eslint.config.js"
+    run_mode
+    [ "$status" -eq 0 ]
+    [ "$output" = "brownfield" ]
+}
+
+@test "detect-mode: .eslintrc* marker -> brownfield" {
+    printf '{}\n' > "${PROJ}/.eslintrc.json"
+    run_mode
+    [ "$status" -eq 0 ]
+    [ "$output" = "brownfield" ]
+}
+
+@test "detect-mode: ruff.toml marker -> brownfield" {
+    printf '[lint]\n' > "${PROJ}/ruff.toml"
+    run_mode
+    [ "$status" -eq 0 ]
+    [ "$output" = "brownfield" ]
+}
+
+@test "detect-mode: .flake8 marker -> brownfield" {
+    printf '[flake8]\n' > "${PROJ}/.flake8"
     run_mode
     [ "$status" -eq 0 ]
     [ "$output" = "brownfield" ]

@@ -49,6 +49,8 @@ teardown() {
     [ "$status" -eq 0 ]
     [ -f "${PLANS}/archive/01-plan.md" ]
     [ ! -f "$PLAN" ]
+    [ ! -d "${PLANS}/completed" ]            # default subdir NOT created
+    [[ "$output" == *"moved:"* ]]            # success message emitted
 }
 
 @test "reuses an existing completed/ dir (does not require lazy create)" {

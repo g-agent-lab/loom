@@ -22,9 +22,11 @@ Personal Claude Code plugin marketplace. Three own plugins (`autopilot`, `kit`,
   entry, FAILS the build.
 - **Checks before pushing.** Run the check scripts (`scripts/validate-marketplace.sh`,
   `drift-guard.sh`, `version-sync.sh`, `link-check.sh`), `shellcheck $(git ls-files '*.sh')`,
-  and `bats tests/` locally before pushing. CI (`.github/workflows/ci.yml`) re-runs all of
-  them on every push/PR and enforces the drift, version-sync, and link guards. See the
-  README's "Development / CI" section for the brew tooling and exact commands.
+  and `bats tests/` locally before pushing. Run `shellcheck` **from the repo root** so it
+  honors the load-bearing root `.shellcheckrc` (suppresses SC2012). CI
+  (`.github/workflows/ci.yml`) re-runs all of them on every push/PR and enforces the drift,
+  version-sync, and link guards. See the README's "Development / CI" section for the brew
+  tooling and exact commands.
 - **Bilingual triggers.** Skill `description` fields list English phrases first, then
   Russian phrases, for natural-language invocation in either language. Slash-command
   identifiers stay Latin (`/autopilot:run`, `/kit:init`).
