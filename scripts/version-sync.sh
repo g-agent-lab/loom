@@ -18,9 +18,15 @@
 #      plugins/<own>/** file changed vs base, REQUIRE:
 #        (a) HEAD plugin.json "version" is SEMVER-GREATER than at base
 #            (unchanged FAILS, downgrade FAILS); AND
-#        (b) that exact new version string appears in the plugin's changelog
-#            section in the diff (a bump with no changelog line FAILS; a
-#            changelog line with no bump FAILS via (a)).
+#        (b) that exact new version string is NEWLY ADDED to the plugin's OWN
+#            changelog section — present in its section at HEAD AND absent from
+#            that same section at BASE. Section-scoped (an added line under the
+#            WRONG header in the shared root CHANGELOG does not count) AND
+#            diff-aware (a stale version already in the section at BASE does not
+#            count). A bump with no changelog line FAILS (not in HEAD section);
+#            a changelog line with no bump FAILS via (a); a wrong-section add
+#            FAILS (not in the correct HEAD section); a stale pre-existing
+#            version FAILS (present in BASE section).
 #      The guard keys off plugins/<x>/ paths ONLY — editing root
 #      README/CLAUDE.md must NOT trip it.
 #
@@ -156,12 +162,28 @@ fi
 if [ -z "$base" ]; then
     log "DIFF-AWARE enforcement SKIPPED — no base ref resolvable (ran static checks only)"
 else
-    # changed files vs base, restricted to plugins/<x>/ paths
-    changed="$(git -C "$root" diff --name-only "$base"...HEAD -- 'plugins/' 2>/dev/null || true)"
+    # changed files vs base, restricted to plugins/<x>/ paths. The base already
+    # passed `rev-parse --verify` above, so the only failure left is the diff /
+    # merge-base path: with three-dot `base...HEAD`, unrelated histories or a
+    # force-pushed base with no merge-base make `git diff` ERROR (exit 128).
+    # A bare `|| true` would mask that failure as an empty set and SILENTLY
+    # bypass enforcement, so distinguish FAILURE from "no changes": on failure,
+    # log a visible SKIP (same never-a-silent-pass semantics as the no-base case)
+    # and run static checks only.
+    diff_status=0
+    changed="$(git -C "$root" diff --name-only "$base"...HEAD -- 'plugins/' 2>/dev/null)" || diff_status=$?
+    if [ "$diff_status" -ne 0 ]; then
+        log "DIFF-AWARE enforcement SKIPPED — \`git diff $base...HEAD\` failed (no merge-base / unrelated history); ran static checks only"
+        changed=""
+    fi
 
     for name in $own; do
         # did any file under THIS plugin change? key off plugins/<x>/ ONLY.
-        if ! printf '%s\n' "$changed" | grep -q "^plugins/$name/"; then
+        # NB: a here-string (no producer process) — a piped `printf … | grep -q`
+        # can have printf killed by SIGPIPE once grep -q exits on the first
+        # match; under `pipefail` that pipeline then reports non-zero, so `if !`
+        # would wrongly treat a CHANGED plugin as UNCHANGED on large diffs.
+        if ! grep -q "^plugins/$name/" <<<"$changed"; then
             continue
         fi
 
@@ -188,36 +210,34 @@ else
             fi
         fi
 
-        # (b) the exact NEW version string must appear in this plugin's
-        #     changelog section IN THE DIFF (an added line).
+        # (b) the exact NEW version string must be NEWLY ADDED to THIS plugin's
+        #     OWN changelog section: present in the plugin's section at HEAD and
+        #     NOT present in that same section at BASE. This is BOTH section-
+        #     scoped (an added line under the WRONG header in the shared root
+        #     CHANGELOG does not count) AND diff-aware (a version that was
+        #     already sitting in the section at BASE — a stale pre-existing
+        #     line — does not count). Reuses the stdin `section()` over
+        #     `git show {BASE,HEAD}:<cl_path>`. For slicer (dedicated file,
+        #     empty header) the whole file IS the section.
         cl_path="$(changelog_relpath "$name")"
         hdr="$(changelog_header "$name")"
 
-        # added lines (leading '+', excluding the '+++' file header) of this
-        # changelog file in the diff. awk avoids BSD/GNU grep divergence over
-        # a leading literal '+' (a regex repetition operator).
-        added="$(git -C "$root" diff "$base"...HEAD -- "$cl_path" 2>/dev/null \
-                    | awk 'substr($0,1,1)=="+" && substr($0,1,3)!="+++" { print substr($0,2) }' || true)"
-
-        if ! contains "$head_ver" "$added"; then
-            err "$name: version bumped to $head_ver but no added changelog line contains \"$head_ver\" in $cl_path (## $hdr section)"
-            continue
-        fi
-
-        # belt-and-suspenders: the new version must ALSO land inside the
-        # plugin's own section at HEAD (guards against an added line that
-        # happens to sit under a different plugin's header in the shared
-        # root CHANGELOG). For slicer (dedicated file, empty header) the whole
-        # file is the section.
         if [ -n "$hdr" ]; then
             head_sec="$(git -C "$root" show "HEAD:$cl_path" 2>/dev/null | section "$hdr" || true)"
-            sec_label="## $hdr"
+            base_sec="$(git -C "$root" show "$base:$cl_path" 2>/dev/null | section "$hdr" || true)"
+            sec_label="## $hdr in $cl_path"
         else
             head_sec="$(git -C "$root" show "HEAD:$cl_path" 2>/dev/null || true)"
-            sec_label="$(basename "$cl_path")"
+            base_sec="$(git -C "$root" show "$base:$cl_path" 2>/dev/null || true)"
+            sec_label="$cl_path"
         fi
+
         if ! contains "$head_ver" "$head_sec"; then
-            err "$name: version $head_ver does not appear inside its own changelog section ($sec_label) at HEAD"
+            err "$name: version bumped to $head_ver but it does not appear in the plugin's own changelog section ($sec_label) at HEAD"
+            continue
+        fi
+        if contains "$head_ver" "$base_sec"; then
+            err "$name: version bumped to $head_ver but \"$head_ver\" was already present in the plugin's changelog section ($sec_label) at BASE — no new entry was added for this bump"
             continue
         fi
 

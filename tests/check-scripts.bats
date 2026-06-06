@@ -378,3 +378,120 @@ EOF
     [ "$status" -eq 0 ]
     echo "$output" | grep -qF "OK"
 }
+
+@test "version-sync DIFF: bump whose new line lands in the WRONG section FAILS" {
+    # Regression for the section-scoped + diff-aware check. autopilot is bumped
+    # 0.1.0 -> 0.2.0, but the only NEW changelog line mentioning 0.2.0 is added
+    # under ## kit (the wrong section). Crucially, autopilot's OWN section
+    # ALREADY contained a stale "0.2.0" line at BASE, so the old belt-and-
+    # suspenders HEAD-section check would wrongly pass and the old global
+    # added-line scan would also pass (0.2.0 IS in an added line — under kit).
+    # The correct check (newly-added to THIS plugin's section: in HEAD section
+    # AND NOT in BASE section) must reject it: 0.2.0 was already in the section
+    # at BASE, so it was not newly added for this bump.
+    R="${TMP}/vs-wrongsec"
+    vs_init "$R"
+    for p in autopilot kit slicer; do
+        mkdir -p "$R/plugins/$p/.claude-plugin"
+    done
+    # autopilot.json starts at 0.1.0 but its section already carries a stale 0.2.0
+    printf '{ "name": "autopilot", "version": "0.1.0" }\n' > "$R/plugins/autopilot/.claude-plugin/plugin.json"
+    printf '{ "name": "kit", "version": "0.1.0" }\n'       > "$R/plugins/kit/.claude-plugin/plugin.json"
+    printf '{ "name": "slicer", "version": "0.1.0" }\n'    > "$R/plugins/slicer/.claude-plugin/plugin.json"
+    printf '# slicer\n\n### 0.1.0\n- init\n' > "$R/plugins/slicer/CHANGELOG.md"
+    cat > "$R/CHANGELOG.md" <<'EOF'
+# Changelog
+
+## autopilot
+
+### 0.2.0
+- STALE: this 0.2.0 line already existed at BASE in the correct section
+
+### 0.1.0
+- init
+
+## kit
+
+### 0.1.0
+- init
+EOF
+    vs_commit "$R" base
+    base="$(git -C "$R" rev-parse HEAD)"
+    # bump autopilot to 0.2.0; the ONLY new 0.2.0 line is under ## kit (wrong)
+    printf '{ "name": "autopilot", "version": "0.2.0" }\n' \
+        > "$R/plugins/autopilot/.claude-plugin/plugin.json"
+    cat > "$R/CHANGELOG.md" <<'EOF'
+# Changelog
+
+## autopilot
+
+### 0.2.0
+- STALE: this 0.2.0 line already existed at BASE in the correct section
+
+### 0.1.0
+- init
+
+## kit
+
+### 0.2.0
+- NEW added line mentioning 0.2.0 but under the WRONG (kit) section
+
+### 0.1.0
+- init
+EOF
+    vs_commit "$R" "bump autopilot; new 0.2.0 line under kit"
+    run_versync "$R" "$base"
+    [ "$status" -ne 0 ]
+    echo "$output" | grep -qF "autopilot"
+    echo "$output" | grep -qF "0.2.0"
+}
+
+@test "version-sync DIFF: bump where version already present in section at BASE FAILS" {
+    # Regression: autopilot is bumped 0.1.0 -> 0.2.0 (and a plugin file is
+    # touched to trip diff-aware), but "0.2.0" was ALREADY present in autopilot's
+    # OWN section at BASE — i.e. no NEW changelog entry was added for THIS bump.
+    # The old HEAD-section belt-and-suspenders check would pass (0.2.0 is in the
+    # section at HEAD, because it was there at BASE too). The diff-aware
+    # "newly added to this section" check must reject it.
+    R="${TMP}/vs-stalebase"
+    vs_init "$R"
+    for p in autopilot kit slicer; do
+        mkdir -p "$R/plugins/$p/.claude-plugin"
+    done
+    printf '{ "name": "autopilot", "version": "0.1.0" }\n' > "$R/plugins/autopilot/.claude-plugin/plugin.json"
+    printf '{ "name": "kit", "version": "0.1.0" }\n'       > "$R/plugins/kit/.claude-plugin/plugin.json"
+    printf '{ "name": "slicer", "version": "0.1.0" }\n'    > "$R/plugins/slicer/.claude-plugin/plugin.json"
+    printf '# slicer\n\n### 0.1.0\n- init\n' > "$R/plugins/slicer/CHANGELOG.md"
+    cat > "$R/CHANGELOG.md" <<'EOF'
+# Changelog
+
+## autopilot
+
+### 0.2.0
+- this 0.2.0 entry was ALREADY here at BASE
+
+### 0.1.0
+- init
+
+## kit
+
+### 0.1.0
+- init
+EOF
+    vs_commit "$R" base
+    base="$(git -C "$R" rev-parse HEAD)"
+    # bump version to the already-present 0.2.0; touch a plugin file; add NO new
+    # changelog line (the 0.2.0 entry is unchanged from BASE).
+    printf '{ "name": "autopilot", "version": "0.2.0" }\n' \
+        > "$R/plugins/autopilot/.claude-plugin/plugin.json"
+    mkdir -p "$R/plugins/autopilot/skills"
+    printf 'tweak\n' > "$R/plugins/autopilot/skills/x.md"
+    vs_commit "$R" "bump to already-present 0.2.0, no new changelog line"
+    run_versync "$R" "$base"
+    [ "$status" -ne 0 ]
+    echo "$output" | grep -qF "autopilot"
+    echo "$output" | grep -qF "0.2.0"
+    # specifically the BASE-already-present message, proving the diff-aware check
+    # (not the static check) is what catches it.
+    echo "$output" | grep -qF "BASE"
+}
