@@ -2,7 +2,7 @@
 
 A personal [Claude Code](https://docs.claude.com/en/docs/claude-code) plugin marketplace.
 
-Two plugins of my own — `autopilot` and `kit` — plus the seven plugins from
+Three plugins of my own — `autopilot`, `kit`, and `slicer` — plus the seven plugins from
 [umputun/cc-thingz](https://github.com/umputun/cc-thingz), re-exposed **by reference**
 (not copied) so they always track upstream.
 
@@ -26,6 +26,7 @@ Then install whatever you want:
 |---|---|---|
 | `autopilot` | Run a queue of plan files sequentially and autonomously via `/planning:exec`, each in its own git worktree | own |
 | `kit` | Bootstrap [llm-kit](https://github.com/g-agent-lab/llm-kit) discipline (greenfield + brownfield) into any project | own |
+| `slicer` | Slice a ready draft into ralphex-executable iteration plans — parser-strict, pack-split, sizing-checked | own |
 | `brainstorm` | Collaborative design dialogue — idea → approaches → design → plan | umputun/cc-thingz |
 | `planning` | Structured implementation planning + autonomous plan execution | umputun/cc-thingz |
 | `review` | PR review, git diff annotation review, writing style guide | umputun/cc-thingz |

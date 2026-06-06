@@ -160,10 +160,10 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
 - Modify: `README.md`
 - Modify: `CHANGELOG.md`
 
-- [ ] README: change "Two plugins of my own" → three (`autopilot`, `kit`, `slicer`); add a `slicer` row to the Plugins table with the correct description and `own` origin
-- [ ] CHANGELOG.md: broaden the header scope sentence to acknowledge `slicer`, and add a `## slicer` section that **references** `plugins/slicer/CHANGELOG.md` as slicer's source of truth (a pointer line + link) — do NOT duplicate slicer's entries into the root file (one source of truth; duplication would re-introduce drift). `version-sync.sh` validates slicer against `plugins/slicer/CHANGELOG.md`, consistent with this
-- [ ] verify: README plugin table lists all 3 own + 7 umputun = 10 entries, matching `marketplace.json`
-- [ ] write check: a quick grep assertion that `slicer` appears in the README table and the root CHANGELOG header/pointer — must pass before Task 2
+- [x] README: change "Two plugins of my own" → three (`autopilot`, `kit`, `slicer`); add a `slicer` row to the Plugins table with the correct description and `own` origin
+- [x] CHANGELOG.md: broaden the header scope sentence to acknowledge `slicer`, and add a `## slicer` section that **references** `plugins/slicer/CHANGELOG.md` as slicer's source of truth (a pointer line + link) — do NOT duplicate slicer's entries into the root file (one source of truth; duplication would re-introduce drift). `version-sync.sh` validates slicer against `plugins/slicer/CHANGELOG.md`, consistent with this
+- [x] verify: README plugin table lists all 3 own + 7 umputun = 10 entries, matching `marketplace.json`
+- [x] write check: a quick grep assertion that `slicer` appears in the README table and the root CHANGELOG header/pointer — must pass before Task 2
 
 ### Task 2: validate-marketplace.sh
 
