@@ -218,12 +218,12 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
 
 ### Task 6: Verify acceptance criteria
 
-- [ ] verify every Acceptance Criteria item (top of plan) is met
-- [ ] run every check script against the repo → all exit 0
-- [ ] run `bats tests/` → all green
-- [ ] run `shellcheck` over all tracked `*.sh` → clean
-- [ ] confirm `ci.yml` is valid YAML and references only tooling installable in CI (no node/python requirement)
-- [ ] confirm no umputun-referenced files were modified (`git status`)
+- [x] verify every Acceptance Criteria item (top of plan) is met
+- [x] run every check script against the repo → all exit 0
+- [x] run `bats tests/` → all green
+- [x] run `shellcheck` over all tracked `*.sh` → clean
+- [x] confirm `ci.yml` is valid YAML and references only tooling installable in CI (no node/python requirement)
+- [x] confirm no umputun-referenced files were modified (`git status`)
 
 ### Task 7: Update documentation
 
