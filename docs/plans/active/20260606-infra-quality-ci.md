@@ -27,22 +27,21 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
   - **Scripts UNDER TEST live in nested plugin dirs, NOT in top-level `scripts/`:**
     - `plugins/autopilot/skills/batch/scripts/discover-plans.sh`
     - `plugins/autopilot/skills/batch/scripts/mark-completed.sh`
-    - `plugins/autopilot/skills/batch/scripts/_tg-resolve.sh` *(created by plan A)*
-    - `plugins/autopilot/skills/batch/scripts/poll-commands.sh` *(created by plan A)*
+    - `plugins/autopilot/skills/batch/scripts/notify.sh` (token/chat/topic resolution + silent no-op)
     - `plugins/kit/skills/greenfield/scripts/detect-stack.sh`
     - `plugins/kit/skills/greenfield/scripts/detect-mode.sh`
   - `.github/workflows/ci.yml` — **new**.
+  - NOTE: the autopilot v0.4 redesign (`20260606-loom-relay-hub.md`) moved Telegram command
+    intake to the separate `loom-relay` Worker, so there is **no** `poll-commands.sh` /
+    `_tg-resolve.sh` to test here, and **no** cross-plan ordering gate. The relay's own tests
+    live in the relay repo. This plan is now independent of plan A.
 - Related patterns found:
   - CLAUDE.md invariants to encode: own plugins are only `autopilot`/`kit`/`slicer`; umputun entries must stay `git-subdir` (no vendoring/drift); manifest is source of truth; versioning requires plugin.json bump + CHANGELOG entry; public prose is English-primary.
   - All scripts are POSIX-ish bash; `jq` is available locally and in CI.
 - Dependencies identified:
-  - **HARD ORDERING: plan A (`20260606-autopilot-v0.4.md`) MUST land before Task 4 of this
-    plan.** Task 4's bats suite covers `_tg-resolve.sh` and `poll-commands.sh` (the two
-    highest-risk new scripts: network + git control), which plan A creates. Do NOT start Task 4
-    until those files exist on disk. If, for scheduling reasons, B must run first, then Task 4
-    is **blocked** — record a concrete ➕ follow-up task (or a new plan file), do not bury the
-    gap in an archived ⚠️ checkbox. Their bats coverage is non-optional. Task 5's CI authoring
-    (`shellcheck $(git ls-files '*.sh')`, `bats tests/`) must match the same script set.
+  - **None on plan A.** The bats suite covers only pre-existing scripts (`discover-plans.sh`,
+    `mark-completed.sh`, `notify.sh`, `detect-stack.sh`, `detect-mode.sh`). This plan can run
+    independently and in any order relative to the autopilot v0.4 / loom-relay plans.
 
 ## Development Approach
 
@@ -58,9 +57,9 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
 ## Testing Strategy
 
 - **unit tests**: bats (`tests/*.bats`) for `discover-plans.sh`, `mark-completed.sh`,
-  `_tg-resolve.sh` (resolution + sibling fallback), `poll-commands.sh` (offset, filters,
-  command recognition), `detect-stack.sh`, `detect-mode.sh`. Check scripts are tested via
-  their own pass/fail fixture runs (Tasks 2–3).
+  `notify.sh` (token/chat/topic resolution incl. sibling `autopilot-*` fallback + silent no-op
+  when unconfigured), `detect-stack.sh`, `detect-mode.sh`. Check scripts are tested via their
+  own pass/fail fixture runs (Tasks 2–3).
 - **e2e tests**: none.
 
 ## Progress Tracking
@@ -73,8 +72,8 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
   and from CI, each exiting non-zero with a clear message on violation.
 - A `tests/` bats suite for the runtime shell scripts, using temp-dir fixtures (fake repos,
   fake plan files, fake `telegram.conf`, stubbed `curl`).
-- One `ci.yml` that installs tooling and runs: require-plan-a → validate-marketplace →
-  drift-guard → version-sync (diff-aware) → link-check → shellcheck → bats.
+- One `ci.yml` that installs tooling and runs: validate-marketplace → drift-guard →
+  version-sync (diff-aware) → link-check → shellcheck → bats.
 
 ## Technical Details
 
@@ -109,7 +108,7 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
   path exists in-repo. Skip `http(s)://`, `mailto:`, and pure `#anchor` links. Fail listing
   dead links.
 - **bats**: temp `BATS_TMPDIR` fixtures; stub network by shimming `curl` on `PATH` for
-  `poll-commands`/`_tg-resolve` send paths.
+  `notify.sh`'s `sendMessage` path.
 - **`ci.yml`**: `ubuntu-latest`; `apt-get install -y shellcheck jq`; `bats-core/bats-action`
   (or `npm i -g bats` fallback); run scripts; `shellcheck $(git ls-files '*.sh')`; `bats tests`.
 
@@ -159,35 +158,27 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
 
 ### Task 4: bats unit-test suite for shell scripts
 
-> ⚠️ **PREREQUISITE (executable hard gate, not prose):** plan A must have landed so that
-> `_tg-resolve.sh` and `poll-commands.sh` exist at `plugins/autopilot/skills/batch/scripts/`.
-> This is enforced by `scripts/require-plan-a.sh` (below) and wired into CI (Task 5) — so the
-> infra suite cannot appear "complete" while the two highest-risk scripts have no coverage.
-
 **Files (to Create):**
-- `scripts/require-plan-a.sh`
 - `tests/helpers.bash`
 - `tests/discover-plans.bats` — SUT: `plugins/autopilot/skills/batch/scripts/discover-plans.sh`
 - `tests/mark-completed.bats` — SUT: `plugins/autopilot/skills/batch/scripts/mark-completed.sh`
-- `tests/tg-resolve.bats` — SUT: `plugins/autopilot/skills/batch/scripts/_tg-resolve.sh`
-- `tests/poll-commands.bats` — SUT: `plugins/autopilot/skills/batch/scripts/poll-commands.sh`
+- `tests/notify.bats` — SUT: `plugins/autopilot/skills/batch/scripts/notify.sh`
 - `tests/kit-detect.bats` — SUT: `plugins/kit/skills/greenfield/scripts/{detect-stack.sh,detect-mode.sh}`
 
-- [ ] create `scripts/require-plan-a.sh`: exit non-zero if any of `_tg-resolve.sh`, `poll-commands.sh` (under `plugins/autopilot/skills/batch/scripts/`) or `tests/tg-resolve.bats`, `tests/poll-commands.bats` are absent — the executable A→B gate
 - [ ] install the bats harness locally: `brew install bats-core` (hard prerequisite for this task's own pass gate)
 - [ ] add `tests/helpers.bash` with temp-dir setup/teardown and a `curl` PATH-stub helper; have each `.bats` reference its SUT by the full nested path above
 - [ ] write bats for `discover-plans.sh` (sorts, excludes `completed/`, skips non-runnable plans) and `mark-completed.sh` (moves into `completed/`, lazy-creates subdir)
-- [ ] write bats for `_tg-resolve.sh` (env precedence, conf parse, sibling `autopilot-*` fallback, topic lookup, `TG_ALLOWED` parse) and `poll-commands.sh` (no-global-offset poll + local per-topic last-seen dedup, chat/topic/date/allowlist filters, `/stop`+`/status` recognition, and that the global offset is never advanced) using stubbed `curl`/fixtures
+- [ ] write bats for `notify.sh`: token/chat/topic resolution (env → `telegram.conf` → sibling `autopilot-*` fallback → topic map by normalized origin), silent no-op + `exit 0` when unconfigured, and the `sendMessage` payload shape (stubbed `curl`)
 - [ ] write bats for `detect-stack.sh` and `detect-mode.sh` (greenfield vs brownfield signals; known-stack detection)
-- [ ] `git add` the new `tests/`/`scripts/` files (CI only sees tracked files), run `scripts/require-plan-a.sh` (passes), then `bats tests/` locally — all green — must pass before Task 5
+- [ ] `git add` the new `tests/` files (CI only sees tracked files), then run `bats tests/` locally — all green — must pass before Task 5
 
 ### Task 5: shellcheck wiring + GitHub Actions CI
 
 **Files:**
 - Create: `.github/workflows/ci.yml`
 
-- [ ] author `ci.yml` (push + PR): checkout with `fetch-depth: 0` (so version-sync's diff-aware mode has a base ref); install `shellcheck`/`jq`/`bats`; run `scripts/require-plan-a.sh`, validate-marketplace, drift-guard, version-sync (diff-aware in CI), link-check; `shellcheck` over all tracked `*.sh`; `bats tests/`
-- [ ] ensure the job fails the build on any check's non-zero exit (including `require-plan-a.sh`); name steps clearly
+- [ ] author `ci.yml` (push + PR): checkout with `fetch-depth: 0` (so version-sync's diff-aware mode has a base ref); install `shellcheck`/`jq`/`bats`; run validate-marketplace, drift-guard, version-sync (diff-aware in CI), link-check; `shellcheck` over all tracked `*.sh`; `bats tests/`
+- [ ] ensure the job fails the build on any check's non-zero exit; name steps clearly
 - [ ] verify: `shellcheck $(git ls-files '*.sh')` is clean locally (fix any residual findings in existing scripts)
 - [ ] test: run the exact CI command sequence locally (or via `act` if available) — all steps pass — must pass before Task 6
 
