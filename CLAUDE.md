@@ -16,7 +16,15 @@ Personal Claude Code plugin marketplace. Three own plugins (`autopilot`, `kit`,
 - **`slicer` is the single source of truth** for `slice-draft-to-plans`. The skill no
   longer ships in llm-kit's bootstrap templates — do not re-add a copy there.
 - **Versioning.** Bump `version` in the plugin's `.claude-plugin/plugin.json` and add
-  a `CHANGELOG.md` entry for any change to an own plugin.
+  a `CHANGELOG.md` entry for any change to an own plugin (`autopilot`/`kit`/`slicer`).
+  CI's `version-sync.sh` enforces this in diff-aware mode: a changed `plugins/<own>/**`
+  file with an unchanged or downgraded `version`, or a bump without a matching changelog
+  entry, FAILS the build.
+- **Checks before pushing.** Run the check scripts (`scripts/validate-marketplace.sh`,
+  `drift-guard.sh`, `version-sync.sh`, `link-check.sh`), `shellcheck $(git ls-files '*.sh')`,
+  and `bats tests/` locally before pushing. CI (`.github/workflows/ci.yml`) re-runs all of
+  them on every push/PR and enforces the drift, version-sync, and link guards. See the
+  README's "Development / CI" section for the brew tooling and exact commands.
 - **Bilingual triggers.** Skill `description` fields list English phrases first, then
   Russian phrases, for natural-language invocation in either language. Slash-command
   identifiers stay Latin (`/autopilot:run`, `/kit:init`).

@@ -227,9 +227,9 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
 
 ### Task 7: Update documentation
 
-- [ ] README: add a short "Development / CI" section (how to run checks + tests locally via brew tooling)
-- [ ] CLAUDE.md: add the new conventions (run `scripts/*` + `bats tests/` before pushing; CI enforces drift/version/link guards)
-- [ ] move this plan to `docs/plans/completed/` (skip if executed via autopilot — it auto-moves on success)
+- [x] README: add a short "Development / CI" section (how to run checks + tests locally via brew tooling)
+- [x] CLAUDE.md: add the new conventions (run `scripts/*` + `bats tests/` before pushing; CI enforces drift/version/link guards)
+- [x] move to completed/ — deferred to end of run (kept in place so planning:exec reviews/finalize can read it; orchestrator moves it after stats)
 
 ## Post-Completion
 

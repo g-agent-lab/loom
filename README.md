@@ -59,6 +59,37 @@ versions. See [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
 
 Pulls the latest of everything — own plugins from this repo, umputun plugins from upstream.
 
+## Development / CI
+
+The repo ships a small set of check scripts plus a bats test suite. To run them
+locally, install the tooling via Homebrew:
+
+```
+brew install shellcheck bats-core jq
+```
+
+Run the check scripts (each exits non-zero with a clear message on a violation):
+
+```
+bash scripts/validate-marketplace.sh
+bash scripts/drift-guard.sh
+bash scripts/version-sync.sh
+bash scripts/link-check.sh
+```
+
+Lint every tracked shell script and run the unit tests:
+
+```
+shellcheck $(git ls-files '*.sh')
+bats tests/
+```
+
+`.github/workflows/ci.yml` runs all of the above on every push and pull request and
+fails the build on any non-zero exit. In CI, `version-sync.sh` runs in diff-aware mode:
+it diffs against the base ref and requires any change under `plugins/<own>/**` to bump
+that plugin's `plugin.json` version and add a matching `CHANGELOG.md` entry. Run locally
+with no base ref, it falls back to static consistency checks.
+
 ## License
 
 `autopilot` and `kit` are MIT (see [LICENSE](LICENSE)). The umputun plugins are MIT and
