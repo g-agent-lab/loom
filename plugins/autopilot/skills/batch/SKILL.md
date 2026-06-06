@@ -1,7 +1,7 @@
 ---
 name: batch
 description: "Run a queue of plan files sequentially and autonomously via /planning:exec, each in its own git worktree. Use when the user says 'autopilot', 'run all plans', 'process the queue', 'batch exec', 'run plans one after another', or has multiple plan files in docs/plans/active/ to execute back-to-back. Также срабатывает на русские фразы: «автопилот», «прогони все планы», «запусти очередь планов», «прогон планов по очереди», «прогони планы автопилотом»."
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(bash:*), Skill, AskUserQuestion, TaskCreate, TaskUpdate, EnterWorktree
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(bash:*), Skill, AskUserQuestion, TaskCreate, TaskUpdate, EnterWorktree, mcp__loom-relay__poll_commands, mcp__loom-relay__ack_commands, mcp__loom-relay__post_status
 ---
 
 # batch
@@ -89,6 +89,20 @@ Reuse `<PROJECT>` and `<BRANCH>` in every message below.
 
 Failures are sent at **both** levels — a failure is exactly the moment the operator needs to know. Treat each `notify.sh` call as fire-and-forget: do not check its output, do not retry, do not let it affect queue control flow.
 
+## Two-way control via loom-relay (`relay_control`)
+
+Opt-in remote control. With `relay_control == true` **and** the `loom-relay` MCP server connected, the operator can send `/stop` (graceful halt after the current plan) and `/status` (live counters reply) from Telegram. Gating is **strict**: default `false`; anything other than an explicit `true` (including absent or unparsed config) leaves this OFF. Commands are checked at **plan boundaries only** — never mid-plan.
+
+**autopilot does NOT touch Telegram for intake.** Webhook ownership, dedup, allowlist, and topic→project demux all live in the separate **`loom-relay`** Cloudflare Worker (see `01-loom-relay-hub.md`). autopilot is just an MCP client that, at each boundary, polls **its own project's** queue and replies. `notify.sh` (one-way progress) is independent and unaffected — `sendMessage` still works with the relay's webhook set.
+
+**Hard requirement — the MCP server MUST be named exactly `loom-relay`.** The `allowed-tools` front-matter lists `mcp__loom-relay__poll_commands` / `…__ack_commands` / `…__post_status` *statically*. A `.mcp.json` server under any other name yields `mcp__<other>__*` tools that are absent from `allowed-tools`, so the calls never resolve — and because an unavailable tool is treated as a silent no-op, `relay_control=true` would then **silently do nothing**, indistinguishable from "not configured". The skill cannot tell a name mismatch from genuine non-configuration (both surface as tool-absent), so this is a **documented requirement**, not an assumption — and the silent-no-op is called out so you know where to look. The server authenticates to Cloudflare Access with **service-token** headers (`CF-Access-Client-Id` / `CF-Access-Client-Secret`) supplied via `${...}` env-expansion in `.mcp.json` (never committed). Setup: `${CLAUDE_PLUGIN_ROOT}/references/relay-control.md`.
+
+**Project key.** Every relay call uses `RELAY_PROJECT_KEY` — the **normalized `git remote origin`** (the exact same normalization `notify.sh` does), captured in Step 4. This is NOT the display `PROJECT` basename; reusing `PROJECT` would not match the relay's `PROJECT_ROUTES` key and would silently poll the wrong (empty) queue.
+
+**Ack semantics.** `post_status` only sends the Telegram **reply** — it is NOT the durable ack. Durably acknowledging a handled command is `ack_commands(project, ack_through)`, called as the LAST relay call after an effect has succeeded. A command whose effect fails is NOT acked → it stays in the relay for retry on the next poll (true at-least-once).
+
+**Never blocks the queue.** Any MCP error, input-schema rejection, or unavailable server → **no-op, continue**. The control path can never stall, fail, or block a run.
+
 ## Process
 
 ### Step 1. Resolve plans directory
@@ -139,6 +153,14 @@ Invoke AskUserQuestion with:
 
 Default the focused option to whatever the userConfig is set to. Store the answer as `WT`.
 
+**Normalize `WT` to a canonical enum.** The AskUserQuestion answer is stored as the option **label**. Map it — or the `worktree_strategy` userConfig, when the answer is the default — to ONE canonical strategy enum, and use that enum everywhere downstream (both the Step 6 worktree pre-arrange and the worktree hint switch on it):
+
+| Stored label / `worktree_strategy` | Canonical `WT` |
+|---|---|
+| `Worktree per plan` / `per_plan` | `per_plan` |
+| `One shared worktree` / `shared` | `shared` |
+| `In-place (no worktree)` / `none` | `none` |
+
 ### Step 4. Initialize queue log
 
 Run:
@@ -150,6 +172,21 @@ bash ${CLAUDE_PLUGIN_ROOT}/skills/batch/scripts/init-queue-log.sh /tmp/queue-$(d
 Capture the log path it outputs (after the leading `queue-log:` prefix). Use this path for all subsequent `append-queue-log.sh` calls. Report the log path to the user.
 
 IMPORTANT: Always use `${CLAUDE_PLUGIN_ROOT}/skills/batch/scripts/append-queue-log.sh` to write to the log after initialization. Never write to it directly.
+
+**Capture two-way-control context (only when `relay_control == true` — see Two-way control).** Once, alongside `PROJECT`/`BRANCH`, capture the queue start time, the relay project key, and the ack cursor:
+
+```bash
+QSTART=$(date +%s); LAST_HANDLED_ID=0
+key="$(git remote get-url origin 2>/dev/null || true)"
+if [ -n "$key" ]; then
+  key="${key%.git}"; key="${key#*://}"; key="${key#*@}"; key="${key/:/\/}"
+else
+  key="$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")"
+fi
+RELAY_PROJECT_KEY="$(printf '%s' "$key" | tr '[:upper:]' '[:lower:]')"; echo "$RELAY_PROJECT_KEY"
+```
+
+`RELAY_PROJECT_KEY` matches `notify.sh`'s normalization exactly (NOT the `PROJECT` basename). `LAST_HANDLED_ID` is the numeric `ack_through` cursor — it MUST start at the integer `0` (not empty/unset): `id <= 0` acks nothing and `id > 0` returns everything, so `0` is the correct "nothing handled yet" start; an empty value would fail the relay tool's input schema → MCP error → the first poll silently no-ops.
 
 **Notify (if `notify` is on — see Telegram Notifications).** Capture `<PROJECT>` and `<BRANCH>` once (the context snippet in that section), then send the **queue start** message: `🚀 <PROJECT> [<BRANCH>] — queue: <M> plan(s)` followed by a newline and the numbered list of plan basenames. Pass the whole thing as the **message** (second) argument to `notify.sh`, with `"${CLAUDE_PLUGIN_DATA}"` as the first — see the Sending block above.
 
@@ -171,6 +208,12 @@ Initialize counters: `completed=0`, `failed=0`, `skipped=0`. Iterate over the di
 
 For each plan:
 
+**Boundary control checkpoint** (runs FIRST, before substep 1 below — only when `relay_control == true` AND the `loom-relay` MCP tools are available; otherwise skip entirely, a silent no-op). Call `poll_commands(project=RELAY_PROJECT_KEY, since=QSTART, ack_through=LAST_HANDLED_ID)`. Process returned commands in **ascending `id`**; for each, perform its effect FIRST, then durably ack:
+- `status` → `post_status(project=RELAY_PROJECT_KEY, "📊 [N/M] ok:<completed> fail:<failed> skip:<skipped>")`. Reply only — does NOT change control flow.
+- `stop` → `post_status(project=RELAY_PROJECT_KEY, "🛑 stopped by command")`, then `skipped += (M - N + 1)` (plan N has not run yet, so it and all remaining are skipped) and mark the queue to break to Step 7 after this checkpoint finishes.
+- **Durably ack only AFTER an effect succeeds**: advance `LAST_HANDLED_ID` to that command's `id`, then call `ack_commands(project=RELAY_PROJECT_KEY, ack_through=LAST_HANDLED_ID)` as the LAST relay call (for `stop`: ack, then break). A command whose effect failed (e.g. `post_status` errored) is NOT acked — it stays in the relay and retries on the next poll.
+- ANY MCP error or unavailable server → **no-op, continue** (never blocks the queue).
+
 1. **Announce** to the user with a banner:
 
    ```
@@ -189,10 +232,15 @@ For each plan:
 
    CRITICAL: an already-complete plan is **success**, not "nothing to do" and not failure. The queue's job is to advance the file system from `active/` to `completed/`; if work was already done in a prior session, the queue still owns the move.
 
-4. **Pre-arrange the worktree** according to `WT` (only reached when the plan is NOT already complete):
-   - `Worktree per plan`: derive a branch slug from the plan filename (strip leading `NN-` or `yyyymmdd-` prefix and `.md` suffix, lowercase, replace non-alphanumeric with `-`). Use the `EnterWorktree` tool to create a fresh worktree on that branch. If `EnterWorktree` errors because the worktree already exists at the target path (leftover from a prior aborted queue run for the same plan), reuse the existing worktree instead — enter it and proceed.
-   - `One shared worktree`: only on the **first** iteration, create a worktree under branch `cc-queue-shared`. On subsequent iterations, do nothing — we are already inside the shared worktree.
-   - `In-place`: do nothing.
+4. **Pre-arrange the worktree** according to the canonical `WT` enum (only reached when the plan is NOT already complete):
+   - `per_plan`: derive a branch slug from the plan filename (strip leading `NN-` or `yyyymmdd-` prefix and `.md` suffix, lowercase, replace non-alphanumeric with `-`). Use the `EnterWorktree` tool to create a fresh worktree on that branch. If `EnterWorktree` errors because the worktree already exists at the target path (leftover from a prior aborted queue run for the same plan), reuse the existing worktree instead — enter it and proceed.
+   - `shared`: only on the **first** iteration, create a worktree under branch `cc-queue-shared`. On subsequent iterations, do nothing — we are already inside the shared worktree.
+   - `none`: do nothing.
+
+   **Worktree hint** (print after pre-arranging, immediately before invoking `/planning:exec` in substep 5). `/planning:exec`'s own Step 2 ALWAYS asks an isolation question — auto mode does not exempt it, and loom cannot suppress or pre-answer it from here — so print a deterministic hint keyed by the canonical `WT` enum, so the operator answers without guesswork. These are the **canonical** hint strings (mirrored verbatim in README Known limitations):
+   - `per_plan` → `↳ autopilot already isolated this plan in its own worktree — when /planning:exec asks about isolation, choose **Stay here**.`
+   - `shared` → `↳ running in the shared queue worktree — when /planning:exec asks about isolation, choose **Stay here**.`
+   - `none` → `↳ autopilot is running in-place; answer /planning:exec's isolation question as you prefer.`
 
 5. **Invoke `/planning:exec`** via the Skill tool. Set `skill` to `"planning:exec"` and `args` to the absolute path of the current plan file. **Do NOT** pass it the plans directory — pass the single plan file.
 
@@ -228,7 +276,12 @@ CRITICAL: You are the QUEUE ORCHESTRATOR. Do NOT investigate why a plan failed. 
 
 CRITICAL: Do NOT modify the plan file yourself. Only `/planning:exec` (via its subagents) writes to the plan. The `mark-completed.sh` script only moves the file; it does not edit content.
 
-Safety: bound the loop at most `M` iterations. The loop's only termination conditions are (a) all M plans processed, or (b) a failure with `stop_on_failure=true`.
+Safety: bound the loop at most `M` iterations. The loop's only termination conditions are (a) all M plans processed, (b) a failure with `stop_on_failure=true`, or (c) a `/stop` at the boundary checkpoint (when `relay_control` is on).
+
+**Final boundary checkpoint** (runs ONCE after the loop exits — whether all plans completed, a failure broke it, or a `/stop` broke it — before the Step 7 summary; same `relay_control == true` + tools-available gating). Do one last `poll_commands(project=RELAY_PROJECT_KEY, since=QSTART, ack_through=LAST_HANDLED_ID)` so a command sent **during the last plan** is still handled:
+- a late `status` → `post_status(project=RELAY_PROJECT_KEY, …)` reply with the final counters;
+- a late `stop` is a **no-op** (the queue is already ending — do NOT double-count `skipped`).
+Then advance `LAST_HANDLED_ID` and `ack_commands(project=RELAY_PROJECT_KEY, ack_through=LAST_HANDLED_ID)` the handled ids — this is exactly the terminal case `ack_commands` exists for (there is no next poll to ride the ack on). Any MCP error/unavailable → no-op (never blocks the summary).
 
 ### Step 7. Queue summary
 

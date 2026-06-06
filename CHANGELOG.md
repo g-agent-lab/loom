@@ -5,6 +5,22 @@ The umputun plugins are referenced from upstream and versioned there, not here.
 
 ## autopilot
 
+### 0.4.0 — 2026-06-06
+- Worktree hint: before each `/planning:exec` invoke, print a deterministic banner
+  (keyed by the worktree strategy) telling the operator how to answer
+  `planning:exec`'s own unavoidable isolation question. `WT` is normalized to a
+  canonical `per_plan` / `shared` / `none` enum.
+- Two-way control via the separate `loom-relay` MCP hub (opt-in `relay_control`,
+  default off): send `/stop` (graceful halt after the current plan) and `/status`
+  (live counters) from Telegram. autopilot no longer touches Telegram for intake —
+  it calls the hub's `poll_commands` / `ack_commands` / `post_status` tools at plan
+  boundaries only. Replaces the abandoned in-plugin `getUpdates` polling design
+  (unsound for a shared multi-machine bot). `notify.sh` (one-way progress) is
+  unchanged.
+- New `relay_control` userConfig. The `.mcp.json` server MUST be named exactly
+  `loom-relay` (static tool names) or control silently no-ops. Added
+  `references/relay-control.md`.
+
 ### 0.3.1 — 2026-06-02
 - Fix Telegram notifications silently never sending. Two root causes: (1)
   `notify.sh` read `$CLAUDE_PLUGIN_DATA` from the Bash subprocess env, where it is

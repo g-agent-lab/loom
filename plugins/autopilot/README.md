@@ -51,6 +51,7 @@ The skill asks once which worktree strategy to use across the run, then iterates
 | `max_plans_per_run` | `0` | Hard cap (0 = no cap) |
 | `notify` | `true` | Telegram notifications master switch (no-op until configured) |
 | `notify_level` | `per_plan` | `per_plan` \| `summary` |
+| `relay_control` | `false` | Opt-in two-way control (`/stop`, `/status`) via the `loom-relay` MCP hub |
 
 ## Telegram notifications
 
@@ -72,6 +73,41 @@ ids live in `$CLAUDE_PLUGIN_DATA` (never committed — only the bot token is a r
 secret); unconfigured = silent no-op; best-effort, never blocks a run. Covers the
 queue only, not standalone `/planning:exec`. Full setup, incl. the project→topic
 map: [`references/telegram-setup.md`](references/telegram-setup.md).
+
+## Two-way control (`/stop`, `/status`)
+
+Opt-in (`relay_control`, default off). Control a running queue from Telegram:
+**`/stop`** halts the queue gracefully after the current plan (remaining plans
+skipped); **`/status`** replies with live counters (`ok` / `fail` / `skip`).
+Commands are checked at **plan boundaries only** — never mid-plan.
+
+autopilot does **not** poll Telegram itself. Intake (webhook, dedup, allowlist,
+topic→project routing) lives in a separate Cloudflare Worker, **`loom-relay`**,
+which exposes `poll_commands` / `ack_commands` / `post_status` MCP tools. autopilot
+calls them at each boundary for its own project's queue. One-way `notify.sh`
+progress is unaffected and keeps working alongside it.
+
+Setup: deploy `loom-relay`, then add it to the machine's `.mcp.json` **under exactly
+the name `loom-relay`** (a different name silently disables control), passing
+Cloudflare Access **service-token** headers via env-expansion — no secret in the repo:
+
+```jsonc
+{
+  "mcpServers": {
+    "loom-relay": {
+      "type": "http",
+      "url": "https://relay.<your-domain>/mcp",
+      "headers": {
+        "CF-Access-Client-Id": "${LOOM_RELAY_CF_ACCESS_CLIENT_ID}",
+        "CF-Access-Client-Secret": "${LOOM_RELAY_CF_ACCESS_CLIENT_SECRET}"
+      }
+    }
+  }
+}
+```
+
+Full setup, supported commands, and the latency caveat:
+[`references/relay-control.md`](references/relay-control.md).
 
 ## Custom rules
 
@@ -96,13 +132,18 @@ autopilot/
 ├── references/
 │   ├── usage.md
 │   ├── custom-rules.md
-│   └── telegram-setup.md
+│   ├── telegram-setup.md
+│   └── relay-control.md                     # two-way control via loom-relay MCP
 └── scripts/resolve-rules.sh                 # override chain for custom rules
 ```
 
 ## Known limitations
 
-- `/planning:exec` worktree question is interactive — the operator answers it once per plan.
+- `/planning:exec`'s worktree question is interactive and cannot be removed from loom (auto mode does not exempt it). Before each invoke, autopilot prints a deterministic hint keyed by the worktree strategy so you know how to answer — verbatim:
+  - `per_plan` → `↳ autopilot already isolated this plan in its own worktree — when /planning:exec asks about isolation, choose **Stay here**.`
+  - `shared` → `↳ running in the shared queue worktree — when /planning:exec asks about isolation, choose **Stay here**.`
+  - `none` → `↳ autopilot is running in-place; answer /planning:exec's isolation question as you prefer.`
+- Two-way control is **plan-boundary only** — `/stop` and `/status` are handled between plans, not mid-plan. Intake (webhook / dedup / allowlist / topic→project routing) lives in `loom-relay`, not here.
 - Sessions are local. A run lasts until the session ends; restart picks up unfinished plans naturally via filesystem state.
 - No parallel execution — by design.
 - No multi-machine fleet view — each machine runs its own session.
