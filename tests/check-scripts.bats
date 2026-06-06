@@ -495,3 +495,104 @@ EOF
     # (not the static check) is what catches it.
     echo "$output" | grep -qF "BASE"
 }
+
+# ===========================================================================
+# version-sync.sh — DIFF-AWARE regression: the THREE diff-aware hardening fixes
+#
+# Each test below pins one fix AND its mutant: it asserts the live script
+# behaves correctly, then overwrites scripts/version-sync.sh in the throwaway
+# repo with a scratch copy carrying the pre-fix code and asserts that scratch
+# copy reverts to the broken behavior. The scratch copy lives only inside the
+# per-test tmpdir (auto-removed in teardown) — nothing is committed anywhere.
+# Without the mutant assertion a revert of the fix would leave bats green; the
+# mutant assertion is what makes these genuine regression guards.
+# ===========================================================================
+
+@test "version-sync DIFF: large diff does not SIGPIPE the membership grep (UNCHANGED still FAILS)" {
+    # Guards the SIGPIPE fix: membership is `grep -q … <<<"$changed"` (a
+    # here-string, no producer process). The pre-fix `printf … | grep -q`
+    # pipeline can have printf killed by SIGPIPE once `grep -q` exits on the
+    # first match; under `pipefail` that pipeline reports non-zero, so the
+    # `if !` wrongly classifies a CHANGED plugin as UNCHANGED. A diff large
+    # enough that printf is still writing when grep exits triggers it; 10000
+    # files reproduces reliably (raise if it ever flakes).
+    R="${TMP}/vs-sigpipe"
+    base="$(vs_baseline "$R")"
+    # add 10000 empty files under plugins/autopilot/ WITHOUT bumping the version
+    mkdir -p "$R/plugins/autopilot/bulk"
+    i=1
+    while [ "$i" -le 10000 ]; do
+        : > "$R/plugins/autopilot/bulk/f$i"
+        i=$((i + 1))
+    done
+    vs_commit "$R" "10000 files under autopilot, no bump"
+
+    # the LIVE (here-string) script must catch the missing bump
+    run_versync "$R" "$base"
+    [ "$status" -ne 0 ]
+    echo "$output" | grep -qF "UNCHANGED"
+
+    # MUTATION-VERIFY: revert the membership line to the piped-printf form and
+    # confirm THIS scenario goes red (SIGPIPE-masked: exit 0, no UNCHANGED).
+    sed -i '' 's#if ! grep -q "\^plugins/\$name/" <<<"\$changed"; then#if ! printf '"'"'%s\\n'"'"' "$changed" | grep -q "^plugins/$name/"; then#' "$R/scripts/version-sync.sh"
+    run_versync "$R" "$base"
+    [ "$status" -eq 0 ]
+    # a substring-stripped equality is bats-enforced; it fails iff UNCHANGED is
+    # present, proving the mutant no longer reports the violation.
+    [ "$output" = "${output/UNCHANGED/}" ]
+}
+
+@test "version-sync DIFF: unrelated history (no merge-base) SKIPS diff-aware, not silently bypasses" {
+    # Guards the git-diff-failure fix: with three-dot `base...HEAD`, an
+    # unrelated/orphan base has no merge-base so `git diff` ERRORs (exit 128).
+    # The fix captures that exit and logs a visible "DIFF-AWARE enforcement
+    # SKIPPED" (never-a-silent-pass). The pre-fix `|| true` masked the failure
+    # as an empty change set and silently bypassed enforcement with no SKIP log.
+    R="${TMP}/vs-orphan"
+    vs_init "$R"
+    # main history: a base commit, then a HEAD that edits plugins/autopilot/
+    for p in autopilot kit slicer; do
+        mkdir -p "$R/plugins/$p/.claude-plugin"
+        printf '{ "name": "%s", "version": "0.1.0" }\n' "$p" \
+            > "$R/plugins/$p/.claude-plugin/plugin.json"
+    done
+    printf '# slicer\n\n### 0.1.0\n- init\n' > "$R/plugins/slicer/CHANGELOG.md"
+    cat > "$R/CHANGELOG.md" <<'EOF'
+# Changelog
+
+## autopilot
+
+### 0.1.0
+- init
+
+## kit
+
+### 0.1.0
+- init
+EOF
+    vs_commit "$R" base
+    main="$(git -C "$R" rev-parse --abbrev-ref HEAD)"
+    mkdir -p "$R/plugins/autopilot/skills"
+    printf 'tweak\n' > "$R/plugins/autopilot/skills/x.md"
+    vs_commit "$R" "edit autopilot at HEAD"
+    # an ORPHAN base sharing no history with HEAD -> `git diff orphan...HEAD` errors
+    git -C "$R" checkout -q --orphan orphanbase
+    find "$R" -mindepth 1 -maxdepth 1 ! -name .git ! -name scripts -exec rm -rf {} +
+    printf 'orphan\n' > "$R/ORPHAN.txt"
+    vs_commit "$R" "orphan root"
+    orphan="$(git -C "$R" rev-parse HEAD)"
+    git -C "$R" checkout -q "$main"
+
+    # the LIVE script must SKIP (visibly) and pass static checks
+    run_versync "$R" "$orphan"
+    [ "$status" -eq 0 ]
+    echo "$output" | grep -qF "DIFF-AWARE enforcement SKIPPED"
+
+    # MUTATION-VERIFY: neuter the diff-failure branch (the pre-fix `|| true`
+    # behavior — masked failure, no SKIP log). The mutant still exits 0 but
+    # must NO LONGER print the SKIPPED line.
+    sed -i '' 's#if \[ "\$diff_status" -ne 0 \]; then#if false; then#' "$R/scripts/version-sync.sh"
+    run_versync "$R" "$orphan"
+    [ "$status" -eq 0 ]
+    [ "$output" = "${output/DIFF-AWARE enforcement SKIPPED/}" ]
+}
