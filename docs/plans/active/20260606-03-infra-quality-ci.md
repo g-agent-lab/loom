@@ -31,7 +31,7 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
     - `plugins/kit/skills/greenfield/scripts/detect-stack.sh`
     - `plugins/kit/skills/greenfield/scripts/detect-mode.sh`
   - `.github/workflows/ci.yml` — **new**.
-  - NOTE: the autopilot v0.4 redesign (`20260606-loom-relay-hub.md`) moved Telegram command
+  - NOTE: the autopilot v0.4 redesign (`20260606-01-loom-relay-hub.md`) moved Telegram command
     intake to the separate `loom-relay` Worker, so there is **no** `poll-commands.sh` /
     `_tg-resolve.sh` to test here, and **no** cross-plan ordering gate. The relay's own tests
     live in the relay repo. This plan is now independent of plan A.

@@ -15,7 +15,7 @@ webhook-owning hub that dedups by `update_id` and routes per project is the docu
 pattern (deep research, 2026-06-06). `getUpdates` and webhooks are mutually exclusive on a
 token; once the hub sets the webhook, no machine may poll the token.
 
-How it integrates: `autopilot` (revised separately in `20260606-autopilot-v0.4.md`) becomes an
+How it integrates: `autopilot` (revised separately in `20260606-02-autopilot-v0.4.md`) becomes an
 MCP client; at each plan boundary it calls the hub's `poll_commands` / `post_status` tools.
 Outbound progress notifications stay direct via autopilot's `notify.sh` (`sendMessage` works
 even with a webhook set); only command replies route through the hub.
@@ -49,9 +49,9 @@ even with a webhook set); only command replies route through the hub.
 - Dependencies / sequencing:
   - This plan **supersedes** the in-plugin Telegram polling that an earlier draft of the sibling
     plans contained. Those plans have **already been revised** to match this design — no
-    cross-plan contradiction remains: `20260606-autopilot-v0.4.md` now uses an MCP-client
+    cross-plan contradiction remains: `20260606-02-autopilot-v0.4.md` now uses an MCP-client
     boundary call + `relay_control` and builds no `poll-commands.sh`/`_tg-resolve.sh`;
-    `20260606-infra-quality-ci.md` dropped the `poll-commands.sh` bats SUT and the
+    `20260606-03-infra-quality-ci.md` dropped the `poll-commands.sh` bats SUT and the
     `require-plan-a.sh` gate (its bats now covers `notify.sh` instead).
   - Recommended implementation order: **this relay plan first** → revised autopilot v0.4 (its
     Feature 2 needs the hub deployed + the MCP server configured in the session at runtime) →
@@ -262,7 +262,7 @@ route back up for replies.
   send `/status` and `/stop` in the project topic, confirm reply + graceful halt.
 
 **Related plans (revisions already applied):**
-- `20260606-autopilot-v0.4.md`: machine-side MCP client wiring (`poll_commands`/`post_status` at
+- `20260606-02-autopilot-v0.4.md`: machine-side MCP client wiring (`poll_commands`/`post_status` at
   plan boundary), `relay_control` userConfig, no `poll-commands.sh`.
-- `20260606-infra-quality-ci.md`: bats covers `notify.sh` (not `poll-commands.sh`); no
+- `20260606-03-infra-quality-ci.md`: bats covers `notify.sh` (not `poll-commands.sh`); no
   `require-plan-a.sh` gate; plan is independent.
