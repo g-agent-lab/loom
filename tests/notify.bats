@@ -44,9 +44,16 @@ write_conf() {
 
 # extract the value of a --data-urlencode k=v pair from the recorded curl argv
 payload_value() {
-    local key="$1"
-    # lines look like:  chat_id=-100123   (the value arg follows --data-urlencode)
-    curl_payload | grep -E "^${key}=" | head -1 | sed -E "s/^${key}=//"
+    local key="$1" line
+    # lines look like:  chat_id=-100123   (the value arg follows --data-urlencode).
+    # Find the first line beginning with the literal "key=" and strip that
+    # prefix — all plain string ops, no regex (avoids metachar surprises that a
+    # `sed -E "s/^${key}=//"` would inherit from an unescaped key).
+    while IFS= read -r line; do
+        case "$line" in
+            "${key}="*) printf '%s\n' "${line#"${key}="}"; return 0 ;;
+        esac
+    done < <(curl_payload)
 }
 
 @test "empty message is a no-op (exit 0, no curl)" {

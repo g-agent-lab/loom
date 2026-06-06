@@ -25,13 +25,13 @@ teardown() {
 @test "errors when no plan argument is given" {
     run "$SUT_MARK"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"usage"* ]]
+    echo "$output" | grep -qF "usage"
 }
 
 @test "errors when the plan file does not exist" {
     run "$SUT_MARK" "${PLANS}/nope.md"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"not found"* ]]
+    echo "$output" | grep -qF "not found"
 }
 
 @test "moves the plan into completed/ and lazy-creates the subdir" {
@@ -41,7 +41,7 @@ teardown() {
     [ -d "${PLANS}/completed" ]              # created lazily
     [ -f "${PLANS}/completed/01-plan.md" ]   # moved in
     [ ! -f "$PLAN" ]                         # gone from source
-    [[ "$output" == *"moved:"* ]]
+    echo "$output" | grep -qF "moved:"
 }
 
 @test "honors a custom completed-subdir name" {
@@ -50,7 +50,7 @@ teardown() {
     [ -f "${PLANS}/archive/01-plan.md" ]
     [ ! -f "$PLAN" ]
     [ ! -d "${PLANS}/completed" ]            # default subdir NOT created
-    [[ "$output" == *"moved:"* ]]            # success message emitted
+    echo "$output" | grep -qF "moved:"      # success message emitted
 }
 
 @test "reuses an existing completed/ dir (does not require lazy create)" {
@@ -65,7 +65,7 @@ teardown() {
     printf 'pre-existing\n' > "${PLANS}/completed/01-plan.md"
     run "$SUT_MARK" "$PLAN"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"already exists"* ]]
+    echo "$output" | grep -qF "already exists"
     [ -f "$PLAN" ]                                       # source untouched
     [ "$(cat "${PLANS}/completed/01-plan.md")" = "pre-existing" ]  # target untouched
 }

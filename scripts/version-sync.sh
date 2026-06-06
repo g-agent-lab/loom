@@ -33,6 +33,9 @@
 
 set -euo pipefail
 
+# NOTE: signature asymmetry vs the other three check scripts — those take an
+# optional [repo-root] as $1; here $1 is the BASE_REF (diff base), so the root is
+# always derived from the script's own location, never an argument.
 root="$(git -C "$(dirname "$0")" rev-parse --show-toplevel 2>/dev/null || pwd)"
 own="autopilot kit slicer"
 
@@ -45,15 +48,17 @@ log() {
     echo "version-sync: $*"
 }
 
-# Extract the changelog section for a plugin from a CHANGELOG file: the lines
-# from `## <plugin>` up to (but excluding) the next `## ` header.
-#   $1 = changelog file, $2 = section header name
+# Extract a plugin's changelog section from CHANGELOG text on STDIN: the lines
+# from `## <plugin>` up to (but excluding) the next `## ` header. Reading stdin
+# (not a path) lets BOTH the on-disk static check (`section "$hdr" < "$file"`)
+# and the diff-aware HEAD check (`git show … | section "$hdr"`) share one impl.
+#   $1 = section header name
 section() {
-    awk -v hdr="## $2" '
+    awk -v hdr="## $1" '
         $0 == hdr { capture = 1; next }
         capture && /^## / { exit }
         capture { print }
-    ' "$1"
+    '
 }
 
 plugin_version() {
@@ -61,16 +66,24 @@ plugin_version() {
     jq -r '.version // ""' "$root/plugins/$1/.claude-plugin/plugin.json"
 }
 
-changelog_file() {
-    # Which changelog holds a plugin's "section", encoded as "file|header".
-    #   - autopilot/kit live in the SHARED root CHANGELOG under a `## <plugin>`
-    #     header; their section is awk-extracted to avoid cross-section false
-    #     matches (0.1.0 appears under both).
-    #   - slicer has its OWN dedicated changelog file; the entire file IS its
-    #     section, so header is the empty sentinel "" (whole-file match).
+# SINGLE source of truth for where a plugin's changelog "section" lives.
+#   - autopilot/kit share the root CHANGELOG under a `## <plugin>` header;
+#     their section is awk-extracted to avoid cross-section false matches
+#     (0.1.0 appears under both).
+#   - slicer has its OWN dedicated changelog file; the entire file IS its
+#     section, so the header is the empty sentinel "" (whole-file match).
+# Two tiny accessors keep static + diff-aware modes in lockstep: the relpath is
+# repo-RELATIVE (prefix "$root/" at the one site that needs an absolute path).
+changelog_relpath() {
     case "$1" in
-        slicer) echo "$root/plugins/slicer/CHANGELOG.md|" ;;
-        *)      echo "$root/CHANGELOG.md|$1" ;;
+        slicer) echo "plugins/slicer/CHANGELOG.md" ;;
+        *)      echo "CHANGELOG.md" ;;
+    esac
+}
+changelog_header() {
+    case "$1" in
+        slicer) echo "" ;;
+        *)      echo "$1" ;;
     esac
 }
 
@@ -95,15 +108,14 @@ for name in $own; do
         err "$name: plugin.json \"version\" is missing or empty"
         continue
     fi
-    spec="$(changelog_file "$name")"
-    file="${spec%%|*}"
-    hdr="${spec##*|}"
+    file="$root/$(changelog_relpath "$name")"
+    hdr="$(changelog_header "$name")"
     if [ ! -f "$file" ]; then
         err "$name: changelog not found: $file"
         continue
     fi
     if [ -n "$hdr" ]; then
-        sec="$(section "$file" "$hdr")"
+        sec="$(section "$hdr" < "$file")"
         if [ -z "$sec" ]; then
             err "$name: changelog section \"## $hdr\" not found in $file"
             continue
@@ -178,13 +190,8 @@ else
 
         # (b) the exact NEW version string must appear in this plugin's
         #     changelog section IN THE DIFF (an added line).
-        spec="$(changelog_file "$name")"
-        cl_path=""
-        case "$name" in
-            slicer) cl_path="plugins/slicer/CHANGELOG.md" ;;
-            *)      cl_path="CHANGELOG.md" ;;
-        esac
-        hdr="${spec##*|}"
+        cl_path="$(changelog_relpath "$name")"
+        hdr="$(changelog_header "$name")"
 
         # added lines (leading '+', excluding the '+++' file header) of this
         # changelog file in the diff. awk avoids BSD/GNU grep divergence over
@@ -203,8 +210,7 @@ else
         # root CHANGELOG). For slicer (dedicated file, empty header) the whole
         # file is the section.
         if [ -n "$hdr" ]; then
-            head_sec="$(git -C "$root" show "HEAD:$cl_path" 2>/dev/null | awk -v h="## $hdr" '
-                $0 == h { c = 1; next } c && /^## / { exit } c { print }' || true)"
+            head_sec="$(git -C "$root" show "HEAD:$cl_path" 2>/dev/null | section "$hdr" || true)"
             sec_label="## $hdr"
         else
             head_sec="$(git -C "$root" show "HEAD:$cl_path" 2>/dev/null || true)"
