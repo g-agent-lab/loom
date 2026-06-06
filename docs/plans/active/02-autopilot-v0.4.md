@@ -29,11 +29,14 @@ remote control without forking the upstream `planning` plugin and without the po
 
 - The worktree hint banner is printed before every `/planning:exec` invoke, with the correct
   string for each strategy (`per_plan`, `shared`, `none`); `WT` is normalized to that enum.
-- With `relay_control` on AND the relay MCP server connected: `/stop` halts the queue gracefully
-  after the current plan (remaining → skipped, ack via `post_status`); `/status` replies with
-  live counters and does not change control flow.
+- With `relay_control == true` AND the relay MCP server connected: `/stop` halts the queue
+  gracefully after the current plan (remaining → skipped, Telegram reply via `post_status`, durable
+  ack via `ack_commands`); `/status` replies with live counters and does not change control flow.
 - With `relay_control` off OR the MCP server not connected: the boundary checkpoint is a silent
   no-op; the queue behaves exactly as v0.3.1.
+- Relay calls use `RELAY_PROJECT_KEY` (normalized `git remote origin`, matching `notify.sh`), NOT
+  the display `PROJECT` basename; and the `.mcp.json` server name is required to be exactly
+  `loom-relay` so the static `allowed-tools` entries resolve (a name mismatch is a silent no-op).
 - `notify.sh` (one-way progress notifications) is **unchanged** and keeps working (sendMessage is
   unaffected by the relay's webhook).
 - `plugin.json` version is `0.4.0` with a matching root-`CHANGELOG.md` autopilot entry.
@@ -53,8 +56,11 @@ remote control without forking the upstream `planning` plugin and without the po
   - `planning:exec` (umputun, git-subdir — **must not be edited**) always asks a worktree
     question (its Step 2: "Auto mode does NOT exempt this question"). autopilot cannot suppress
     or programmatically answer it → hence the hint (Feature 1).
-  - The project key = normalized `git remote origin` (same normalization `notify.sh` already
-    does), passed to the relay as `project`.
+  - The relay `project` key = normalized `git remote origin` (same normalization `notify.sh`
+    already does), captured into a **distinct `RELAY_PROJECT_KEY`** variable. It is **NOT** the
+    existing `PROJECT` (repo *basename*, `SKILL.md:71`, used only for display in notify messages);
+    reusing `PROJECT` for the relay would not match the relay's `PROJECT_ROUTES` key and would
+    silently poll the wrong queue.
   - **No new shell scripts.** Because intake moved to the relay, there is no `poll-commands.sh`,
     and the previously-planned `_tg-resolve.sh` extraction is dropped (YAGNI: `notify.sh` would be
     its only consumer). `notify.sh` stays as-is.
@@ -100,31 +106,55 @@ remote control without forking the upstream `planning` plugin and without the po
 - **Worktree hint**: autopilot's model unchanged (Step 3 AskUserQuestion + `EnterWorktree` stay).
   After Step 3, normalize `WT` (label → enum). A banner is printed inside the Step 6 loop right
   before invoking `/planning:exec`, keyed by the canonical enum.
-- **Two-way control**: at the top of each Step 6 iteration, when `relay_control` is on and the
-  relay MCP tools are available, the orchestrator calls `poll_commands(project, since=QSTART,
-  ack_through=<last_handled_id>)`, then acts: `stop` → graceful halt; `status` → `post_status`
-  with counters. The relay (single Telegram consumer) handles webhook intake, dedup, allowlist,
-  and topic→project demux — autopilot only consumes its own project's queue.
+- **Two-way control**: at the top of each Step 6 iteration, when `relay_control == true` and the
+  relay MCP tools are available, the orchestrator calls `poll_commands(project=RELAY_PROJECT_KEY,
+  since=QSTART, ack_through=LAST_HANDLED_ID)`, then acts: `stop` → graceful halt; `status` →
+  `post_status` reply with counters. Durable ack of handled commands is via `ack_commands`, NOT
+  `post_status` (which only sends the Telegram reply). The relay (single Telegram consumer)
+  handles webhook intake, dedup, allowlist, and topic→project demux — autopilot only consumes its
+  own project's queue. One **final checkpoint** runs after the last plan (before the summary) so a
+  command sent during the last plan — notably `/status` — is still answered and acked.
 
 ## Technical Details
 
-- **SKILL.md front-matter**: add the relay MCP tools to `allowed-tools` (e.g.
-  `mcp__loom-relay__poll_commands`, `mcp__loom-relay__ack_commands`, `mcp__loom-relay__post_status`
-  — exact names follow the configured MCP server name; document the assumption).
+- **SKILL.md front-matter**: add the relay MCP tools to `allowed-tools`:
+  `mcp__loom-relay__poll_commands`, `mcp__loom-relay__ack_commands`, `mcp__loom-relay__post_status`.
+  These names are **static in the packaged skill**, so the MCP server name in `.mcp.json` is a
+  **hard contract: it MUST be exactly `loom-relay`**. A different server name yields
+  `mcp__<other>__*` tools that are absent from `allowed-tools`, so the calls never resolve — and
+  because the design treats an unavailable tool as a silent no-op, `relay_control=true` would then
+  **silently do nothing** (indistinguishable from "not configured"). This is a documented
+  requirement in `relay-control.md` and the relay's `SETUP.md`, NOT an "assumption". (A SKILL.md
+  cannot itself detect a name mismatch vs. genuine non-configuration — both surface as tool-absent
+  — so the name requirement is enforced by docs, and the silent-no-op caveat is called out so the
+  operator knows where to look.)
 - **Step 3 → normalize `WT`**: map the stored AskUserQuestion label (`Worktree per plan` / `One
   shared worktree` / `In-place`) — or the `worktree_strategy` userConfig — to ONE canonical enum
   (`per_plan`/`shared`/`none`). Both worktree pre-arrange (substep 4) and the hint switch on it.
-- **Step 4**: capture `QSTART=$(date +%s)` once, alongside `PROJECT`/`BRANCH`; track an in-memory
-  `LAST_HANDLED_ID` (init empty) for `ack_through`.
+- **Step 4**: capture `QSTART=$(date +%s)` once, alongside `PROJECT`/`BRANCH`. **Also capture a
+  distinct `RELAY_PROJECT_KEY`** — the **normalized `git remote origin`** computed with the EXACT
+  same steps as `notify.sh` (drop trailing `.git`, drop `scheme://`, drop `user@`, scp
+  `host:path` → `host/path`, lowercase; fall back to repo basename only if there is no origin).
+  This is the `project` argument for every relay tool call. **Do NOT reuse `PROJECT`** — that is
+  the repo *basename* (`SKILL.md:71`, display-only) and will not match the relay's
+  `PROJECT_ROUTES` key (normalized origin), so `poll_commands`/`post_status` would silently target
+  the wrong (empty) queue. Track an in-memory `LAST_HANDLED_ID` for `ack_through`, **initialized to
+  the integer `0`** (NOT empty): `ack_through` is a numeric cursor — `id <= 0` drops nothing and
+  `id > 0` returns everything, so `0` is the correct "nothing acked yet" start. An empty/unset
+  value would fail the relay tool's input-schema validation → MCP error → the first poll silently
+  no-ops (and stays broken until a command is handled, i.e. never).
 - **Step 6 substeps** (numbered 1–7 today; additions described by position):
-  - **Poll checkpoint** — new FIRST substep, before "Announce": only when `relay_control != false`
-    AND the relay MCP tools are available, call `poll_commands(project=<normalized origin>,
-    since=QSTART, ack_through=LAST_HANDLED_ID)`. Process returned commands in ascending `id`,
-    performing each effect FIRST: `status` → `post_status(project, "📊 [N/M] ok:<c> fail:<f>
-    skip:<s>")`; `stop` → `post_status(project, "🛑 stopped by command")`, set
-    `skipped += (M - N + 1)`, mark the queue to break to Step 7. **Acknowledge only AFTER an
-    effect succeeds**: advance `LAST_HANDLED_ID` to that command's `id`, then call
-    `ack_commands(project, ack_through=LAST_HANDLED_ID)` as the LAST relay call (for `stop`, ack
+  - **Poll checkpoint** — new FIRST substep, before "Announce": only when `relay_control == true`
+    (strict — opt-in, default `false`; anything other than an explicit `true`, incl.
+    absent/unparsed config, leaves the path OFF) AND the relay MCP tools are available, call
+    `poll_commands(project=RELAY_PROJECT_KEY, since=QSTART, ack_through=LAST_HANDLED_ID)`. Process
+    returned commands in ascending `id`, performing each effect FIRST — note `post_status` only
+    sends the Telegram **reply**, it is NOT the durable ack (that is `ack_commands`): `status` →
+    `post_status(project=RELAY_PROJECT_KEY, "📊 [N/M] ok:<c> fail:<f> skip:<s>")`; `stop` →
+    `post_status(project=RELAY_PROJECT_KEY, "🛑 stopped by command")`, set
+    `skipped += (M - N + 1)`, mark the queue to break to Step 7. **Durably acknowledge only AFTER
+    an effect succeeds**: advance `LAST_HANDLED_ID` to that command's `id`, then call
+    `ack_commands(project=RELAY_PROJECT_KEY, ack_through=LAST_HANDLED_ID)` as the LAST relay call (for `stop`, ack
     *then* break). A command whose effect fails (e.g. `post_status` errored) is NOT acked → it
     stays in the relay for retry next poll (true at-least-once). Any MCP error or unavailable
     server → **no-op, continue** (never blocks the queue).
@@ -133,6 +163,15 @@ remote control without forking the upstream `planning` plugin and without the po
     /planning:exec asks about isolation, choose **Stay here**." `shared` → "running in the shared
     queue worktree — choose **Stay here**." `none` → "autopilot is running in-place; answer
     /planning:exec's isolation question as you prefer." (canonical strings)
+  - **Final checkpoint** — runs ONCE after the loop exits (all plans done OR a `stop` break),
+    before the Step 7 summary, under the same `relay_control == true` + tools-available gating.
+    Do ONE last `poll_commands(project=RELAY_PROJECT_KEY, since=QSTART, ack_through=LAST_HANDLED_ID)`
+    so a command sent **during the last plan** is still handled: a late `status` →
+    `post_status(project=RELAY_PROJECT_KEY, …)` reply with final counters; a late `stop` is a
+    **no-op** (the queue is already ending — do not double-count `skipped`). Then advance
+    `LAST_HANDLED_ID` and `ack_commands(project=RELAY_PROJECT_KEY, ack_through=LAST_HANDLED_ID)` —
+    **this is exactly the terminal case `ack_commands` exists for**: there is no next poll to ride
+    the ack on. Any MCP error/unavailable → no-op (never blocks the summary).
 - **plugin.json**: add `relay_control` (boolean, default `false`; opt-in, changes control flow).
 
 ## What Goes Where
@@ -159,11 +198,12 @@ remote control without forking the upstream `planning` plugin and without the po
 **Files:**
 - Modify: `plugins/autopilot/skills/batch/SKILL.md`
 
-- [ ] add the relay MCP tools to the SKILL `allowed-tools` front-matter; document the assumed MCP server name (`loom-relay`)
-- [ ] Step 4: capture `QSTART=$(date +%s)` once (next to `PROJECT`/`BRANCH`) and init `LAST_HANDLED_ID`
-- [ ] Step 6: add a FIRST substep (before "Announce") — when `relay_control != false` and the relay MCP tools are available, call `poll_commands(project, since=QSTART, ack_through=LAST_HANDLED_ID)`; process commands in ascending `id`, performing each effect FIRST (`status` → `post_status` counters; `stop` → `post_status` ack + `skipped += M-N+1` + mark break); ONLY after an effect succeeds advance `LAST_HANDLED_ID` to its `id`, then call `ack_commands(project, ack_through=LAST_HANDLED_ID)` as the LAST relay call (for `stop`, ack then break to Step 7); a failed effect is not acked (retries next poll); ANY MCP error/unavailable → no-op continue
+- [ ] add the relay MCP tools to the SKILL `allowed-tools` front-matter; **require** the `.mcp.json` server name to be exactly `loom-relay` (static tool names ⇒ a mismatched name makes `relay_control` a silent no-op) — state this requirement, do not leave it as an assumption
+- [ ] Step 4: capture `QSTART=$(date +%s)` once (next to `PROJECT`/`BRANCH`), capture `RELAY_PROJECT_KEY` = normalized `git remote origin` (EXACT same normalization as `notify.sh`, NOT the `PROJECT` basename — a mismatch silently polls the wrong relay queue), and init `LAST_HANDLED_ID=0` (numeric cursor — empty/unset fails the relay tool schema and no-ops the poll)
+- [ ] Step 6: add a FIRST substep (before "Announce") — when `relay_control == true` (strict; default `false`, anything not explicitly `true` stays OFF) and the relay MCP tools are available, call `poll_commands(project=RELAY_PROJECT_KEY, since=QSTART, ack_through=LAST_HANDLED_ID)`; process commands in ascending `id`, performing each effect FIRST — `post_status` is only the Telegram **reply**, NOT the durable ack (`status` → `post_status(project=RELAY_PROJECT_KEY, …)` counters reply; `stop` → `post_status(project=RELAY_PROJECT_KEY, …)` reply + `skipped += M-N+1` + mark break); ONLY after an effect succeeds advance `LAST_HANDLED_ID` to its `id`, then durably ack via `ack_commands(project=RELAY_PROJECT_KEY, ack_through=LAST_HANDLED_ID)` as the LAST relay call (for `stop`, ack then break to Step 7); a failed effect is not acked (retries next poll); ANY MCP error/unavailable → no-op continue
+- [ ] add a FINAL checkpoint after the loop exits (before Step 7 summary): one last `poll_commands(project=RELAY_PROJECT_KEY, …)` so a command sent during the last plan is still handled (`status` → `post_status` reply with final counters; a late `stop` is a no-op — don't double-count `skipped`), then `ack_commands(project=RELAY_PROJECT_KEY, …)` the handled ids (terminal case — no next poll); same gating; MCP error → no-op
 - [ ] document inline: plan-boundary-only control (no mid-plan), and that intake/dedup/allowlist/demux live in `loom-relay` (not here)
-- [ ] run a control-flow walkthrough: stop, status, relay-off, and MCP-unavailable paths all behave (no path blocks the queue) — must pass before Task 3
+- [ ] run a control-flow walkthrough: stop, status, relay-off, MCP-unavailable, AND a command arriving during the last plan (final checkpoint answers it) all behave (no path blocks the queue) — must pass before Task 3
 
 ### Task 3: relay_control userConfig + version bump
 
@@ -182,7 +222,7 @@ remote control without forking the upstream `planning` plugin and without the po
 - Modify: `CHANGELOG.md`
 
 - [ ] README: add `relay_control` to the userConfig table; document two-way control via `loom-relay` (`/stop`,`/status`), the `.mcp.json` setup sending `CF-Access-Client-Id`/`CF-Access-Client-Secret` (Access service-token) headers via `${...}` env-expansion (no secret in repo), and the worktree-hint behavior; mirror the three canonical hint strings verbatim in Known limitations; update Known limitations (plan-boundary control only; planning:exec prompt cannot be removed from loom; intake lives in loom-relay)
-- [ ] `references/relay-control.md`: how to point autopilot at a deployed `loom-relay` (MCP server entry in `.mcp.json` with the CF Access service-token headers `CF-Access-Client-Id`/`CF-Access-Client-Secret` via env, supported commands, latency caveat); cross-link `01-loom-relay-hub.md`
+- [ ] `references/relay-control.md`: how to point autopilot at a deployed `loom-relay` (MCP server entry in `.mcp.json` — **the entry MUST be named exactly `loom-relay`**, since a different name silently disables control — with the CF Access service-token headers `CF-Access-Client-Id`/`CF-Access-Client-Secret` via env, supported commands, latency caveat); cross-link `01-loom-relay-hub.md`
 - [ ] CHANGELOG.md: add an autopilot `0.4.0 — 2026-06-06` entry (worktree hint; two-way control via loom-relay MCP `/stop`+`/status`; `relay_control` config). NOTE: the root CHANGELOG header-scope fix (adding `slicer`) is owned by plan B — do NOT touch the header scope here
 - [ ] verify: English-primary prose; links resolve; no bot token / secret in any doc — must pass before Task 5
 

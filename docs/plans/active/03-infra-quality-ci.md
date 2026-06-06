@@ -14,6 +14,26 @@ plus README/CHANGELOG that have drifted out of sync with the manifest (`slicer` 
 This is the "Full" infra scope chosen in brainstorm: docs fix · manifest validation ·
 shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
 
+## Acceptance Criteria
+
+- README and root `CHANGELOG.md` acknowledge all **three** own plugins (incl. `slicer`); the
+  README plugin table lists 3 own + 7 umputun = 10 entries, matching `marketplace.json`.
+- `scripts/validate-marketplace.sh`, `drift-guard.sh`, `version-sync.sh`, `link-check.sh` each
+  exit 0 against the live repo and non-zero (with a clear message) against a deliberately broken
+  fixture.
+- `version-sync.sh` enforces BOTH modes: section-scoped static matching AND diff-aware bump
+  enforcement (changed `plugins/<own>/**` ⇒ HEAD `version` is **semver-greater** than base —
+  unchanged or downgraded FAILS — AND the new version string appears in that plugin's changelog
+  section); with no base ref it falls back to static and logs that enforcement was skipped (never
+  a silent pass).
+- `bats tests/` is all green, covering `discover-plans.sh`, `mark-completed.sh`, `notify.sh`,
+  `detect-stack.sh`, `detect-mode.sh`.
+- `shellcheck` is clean over every tracked `*.sh`.
+- `.github/workflows/ci.yml` is valid YAML, runs all checks + shellcheck + bats on push/PR, fails
+  the build on any non-zero exit, and requires only CI-installable tooling (bash/jq/shellcheck/
+  bats — no node/python).
+- No umputun-referenced plugin files are modified.
+
 ## Context (from discovery)
 
 - Files/components involved:
@@ -95,12 +115,26 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
      and the next `## ` header in root `CHANGELOG.md` (extract with awk); for slicer, in
      `plugins/slicer/CHANGELOG.md`.
   2. **Diff-aware enforcement (when a base ref is available — i.e. CI):** this is what actually
-     encodes the convention. Compute changed files vs base (`git diff --name-only $BASE...HEAD`,
-     `$BASE` = PR base, else `git merge-base origin/master HEAD`). If ANY `plugins/<own>/**` file
-     changed, REQUIRE the same diff to also change that plugin's `.claude-plugin/plugin.json`
-     `version` AND add a line under that plugin's changelog section. When no base ref is
-     resolvable (local one-off), fall back to static mode and `log` that enforcement was skipped
-     — never a silent pass.
+     encodes the convention. Compute changed files vs base (`git diff --name-only $BASE...HEAD`).
+     **`$BASE` resolution, in order:** (i) PR → the PR base SHA
+     (`github.event.pull_request.base.sha`); (ii) push → `github.event.before` (the branch's prior
+     tip) — REQUIRED so a **direct push to `master`** still diffs against the previous commit;
+     treat the all-zero SHA (new branch / initial push / force-push with no parent) as "no base";
+     (iii) last resort (local one-off) → `git merge-base origin/master HEAD`. **Do NOT** rely on
+     `merge-base origin/master HEAD` for a push to `master`: there it resolves to HEAD's own
+     ancestor and yields an effectively empty diff → enforcement would silently pass. `ci.yml`
+     passes the resolved SHA into `version-sync.sh` as `$BASE`; the script uses `$BASE` when set,
+     else falls back to the local merge-base. If ANY `plugins/<own>/**` file
+     changed, REQUIRE: (a) the `.claude-plugin/plugin.json` `version` at HEAD is
+     **semver-greater than** its value at `$BASE` — compare `git show $BASE:<path>` (jq the
+     `version`) against HEAD (e.g. `sort -V` / a `major.minor.patch` numeric compare); a mere edit
+     to `plugin.json` (e.g. a description tweak) with an **unchanged** `version` FAILS, and a
+     **downgrade** FAILS (this is a hard requirement, not optional); AND (b) that **exact new
+     version string appears in the plugin's changelog section** in the diff — bumping `version`
+     without a matching changelog entry, OR adding an unrelated changelog line without the bump,
+     FAILS. When no
+     base ref is resolvable (local one-off), fall back to static mode and `log` that enforcement
+     was skipped — never a silent pass.
   The guard keys off `plugins/<x>/` paths only — editing root README/CLAUDE.md must NOT trip it.
   Fail with the precise per-plugin mismatch.
 - **`link-check.sh`**: extract relative markdown links from README + plugin READMEs + `docs/`
@@ -150,11 +184,11 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
 - Create: `scripts/link-check.sh`
 
 - [ ] implement `drift-guard.sh` (plugins/ == exactly autopilot+kit+slicer; umputun entries stay git-subdir)
-- [ ] implement `version-sync.sh` with BOTH modes (see Technical Details): (1) **static** section-scoped matching — autopilot/kit versions checked within their own `## <plugin>`→next-`## ` block in root `CHANGELOG.md` (awk-extracted), slicer in `plugins/slicer/CHANGELOG.md`; (2) **diff-aware enforcement** when a base ref exists — if `plugins/<own>/**` changed vs base, REQUIRE the same diff to bump that plugin's `plugin.json` `version` AND add a changelog line under its section (else fall back to static and `log` that enforcement was skipped). Key off `plugins/<x>/` paths only
+- [ ] implement `version-sync.sh` with BOTH modes (see Technical Details): (1) **static** section-scoped matching — autopilot/kit versions checked within their own `## <plugin>`→next-`## ` block in root `CHANGELOG.md` (awk-extracted), slicer in `plugins/slicer/CHANGELOG.md`; (2) **diff-aware enforcement** when a base ref exists — if `plugins/<own>/**` changed vs base, REQUIRE the HEAD `plugin.json` `version` to be **semver-greater than base** (unchanged or downgraded FAILS) AND a changelog line containing that exact new version under the plugin's section (else fall back to static and `log` that enforcement was skipped). Key off `plugins/<x>/` paths only
 - [ ] implement `link-check.sh` (relative markdown links resolve in-repo; skip `http(s)://`, `mailto:`, `#anchor`; exclude `docs/plans/`)
 - [ ] verify: `shellcheck` clean on all three
 - [ ] test (pass): all three exit 0 against the real repo
-- [ ] test (fail): temp fixtures — a vendored `plugins/brainstorm/`; a kit version present only in autopilot's CHANGELOG section (proves section-scoping rejects the cross-section false match); a simulated diff where `plugins/autopilot/**` changed but `plugin.json` `version` did NOT (proves diff-aware enforcement fails it); a dead relative link — each produces a non-zero exit with a clear message — must pass before Task 4
+- [ ] test (fail): temp fixtures — a vendored `plugins/brainstorm/`; a kit version present only in autopilot's CHANGELOG section (proves section-scoping rejects the cross-section false match); a simulated diff where `plugins/autopilot/**` changed but `plugin.json` `version` did NOT (diff-aware fails it); a diff that bumps `version` but adds **no** changelog line containing that new version (fails); a diff that bumps `version` AND adds a matching changelog line (passes — the positive control); a diff that *downgrades* `version` (fails the required semver-greater check); a dead relative link — each produces the expected exit + clear message — must pass before Task 4
 
 ### Task 4: bats unit-test suite for shell scripts
 
@@ -177,13 +211,14 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
 **Files:**
 - Create: `.github/workflows/ci.yml`
 
-- [ ] author `ci.yml` (push + PR): checkout with `fetch-depth: 0` (so version-sync's diff-aware mode has a base ref); install `shellcheck`/`jq`/`bats`; run validate-marketplace, drift-guard, version-sync (diff-aware in CI), link-check; `shellcheck` over all tracked `*.sh`; `bats tests/`
+- [ ] author `ci.yml` (push + PR): checkout with `fetch-depth: 0` (so version-sync's diff-aware mode has a base ref); resolve and export `$BASE` for version-sync — PR → `github.event.pull_request.base.sha`, push → `github.event.before` (NOT `merge-base origin/master HEAD`, which is empty on a direct push to `master`); install `shellcheck`/`jq`/`bats`; run validate-marketplace, drift-guard, version-sync (diff-aware in CI, passing `$BASE`), link-check; `shellcheck` over all tracked `*.sh`; `bats tests/`
 - [ ] ensure the job fails the build on any check's non-zero exit; name steps clearly
 - [ ] verify: `shellcheck $(git ls-files '*.sh')` is clean locally (fix any residual findings in existing scripts)
 - [ ] test: run the exact CI command sequence locally (or via `act` if available) — all steps pass — must pass before Task 6
 
 ### Task 6: Verify acceptance criteria
 
+- [ ] verify every Acceptance Criteria item (top of plan) is met
 - [ ] run every check script against the repo → all exit 0
 - [ ] run `bats tests/` → all green
 - [ ] run `shellcheck` over all tracked `*.sh` → clean

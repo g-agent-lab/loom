@@ -69,8 +69,13 @@ even with a webhook set); only command replies route through the hub.
   allowlist are `wrangler secret put` values; `PROJECT_ROUTES` is a plain JSON env var. The
   machine-side Access credentials (`CF-Access-Client-Id`/`CF-Access-Client-Secret`) are never in
   this repo — they live in the machine's env / `.mcp.json` via `${...}` expansion (autopilot plan).
-- **CRITICAL**: the webhook handler must return `200` fast and defer heavy work to
-  `ctx.waitUntil` — otherwise Telegram redelivers (at-least-once).
+- **CRITICAL**: the webhook handler returns `200` quickly, but the **enqueue is part of the
+  ack** — `secret_token` validation, `update_id` dedup, and the **DO `enqueue` MUST be `await`ed
+  before the `200`**. Only genuinely non-critical side effects may go in `ctx.waitUntil`.
+  Returning `200` before the command is durably enqueued tells Telegram "delivered" while losing
+  the command — Telegram redelivers only on non-`200`/timeout (at-least-once), so a premature
+  `200` is *permanent* loss. For `/stop`/`/status` the enqueue IS the work; there is effectively
+  nothing heavy left to defer.
 - Keep handlers idempotent: dedup by `update_id`; `poll_commands` acks only what the caller
   reports handled.
 
@@ -114,7 +119,9 @@ route back up for replies.
   - `enqueue({id, cmd, from, ts})` dedups on `id` (ignore if `id` already in the seen-set).
   - `poll({since, ack_through})`: first **drop all queued entries with `id <= ack_through`**
     (cursor advance), then return remaining entries with `ts >= since`, in ascending `id`
-    order. (`since` = the caller's `queue_start_epoch`, in seconds.)
+    order. (`since` = the caller's `queue_start_epoch`, in seconds.) `ack_through` is a
+    **non-negative integer** cursor; the client starts at `0` (= nothing acked yet), so the tool's
+    input schema MUST accept `0` (do not set `minimum: 1`).
   - **State hydration:** load `{queue, ackedCursor, seenSet}` from `this.ctx.storage` before
     serving — either via `blockConcurrencyWhile(() => hydrate())` in the constructor, or
     read-through on each method. REQUIRED so a freshly-rehydrated (evicted then woken) DO never
@@ -125,8 +132,9 @@ route back up for replies.
   `message.from.id`, `message.text`, `message.date` (→ `ts`); if `from.id ∉ ALLOWLIST` → **200
   drop** (intentionally 200, NOT 403: prevents Telegram redelivery storms and does not leak
   allowlist state); resolve project by **reverse-matching** `(chat.id, message_thread_id)` against `PROJECT_ROUTES`; parse `/stop`, `/status` (also
-  `@bot` and bare) → unknown ignored (200); `enqueue` into the project DO; return 200; heavy
-  work in `ctx.waitUntil`.
+  `@bot` and bare) → unknown ignored (200); **`await` the `enqueue` into the project DO, THEN
+  return 200** (the enqueue is on the ack path — only non-critical side effects, if any, go in
+  `ctx.waitUntil`).
 - **MCP server transport** (pinned): **stateless Streamable HTTP** at `/mcp` using
   `@modelcontextprotocol/sdk`'s server with a thin Workers `fetch` adapter that returns JSON
   responses (no SSE session, no `Mcp-Session-Id` state). **Three tools:**
@@ -201,7 +209,7 @@ route back up for replies.
 - Create: `src/lib/routes.ts`
 - Create: `test/webhook.test.ts`
 
-- [ ] implement `POST /tg/webhook`: validate `X-Telegram-Bot-Api-Secret-Token` (401 on mismatch); parse update; dedup by `update_id`; authz `from.id` against `ALLOWLIST`; resolve project by reverse-matching `(chat.id, message_thread_id)` via `src/lib/routes.ts`; parse `/stop`,`/status` (+`@bot`/bare); `enqueue` to the project DO; return 200; defer heavy work via `ctx.waitUntil`
+- [ ] implement `POST /tg/webhook`: validate `X-Telegram-Bot-Api-Secret-Token` (401 on mismatch); parse update; dedup by `update_id`; authz `from.id` against `ALLOWLIST`; resolve project by reverse-matching `(chat.id, message_thread_id)` via `src/lib/routes.ts`; parse `/stop`,`/status` (+`@bot`/bare); **`await` the `enqueue` to the project DO BEFORE returning 200** (enqueue is on the ack path — a premature 200 loses the command); only non-critical side effects (if any) via `ctx.waitUntil`
 - [ ] implement `routes.ts` parsing the plain `PROJECT_ROUTES` JSON var, exposing both directions: `routeFor(project) → {chat_id, message_thread_id}` (for `post_status`) and `projectFor(chat_id, message_thread_id) → project` (for webhook intake); capture `message.date` as the enqueued `ts`
 - [ ] write tests: wrong/missing secret_token → **401**; non-allowlisted `from.id` → **200 drop** (assert NOT 403, so Telegram won't redeliver); known topic maps to project + enqueues; `/stop`,`/status`,`@bot`,bare parsed; unknown text ignored
 - [ ] write tests: duplicate `update_id` is a no-op; malformed update doesn't 500
