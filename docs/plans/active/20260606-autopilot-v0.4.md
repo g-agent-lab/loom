@@ -64,7 +64,7 @@ forking the upstream `planning` plugin.
 
 - **unit tests**: shell-level. This plan uses `shellcheck` + manual smoke runs per task.
 - **⚠️ Stated coverage risk**: within v0.4 itself, the highest-logic-density new script
-  (`poll-commands.sh`: offset persistence, JSON filtering, date cutoff, command parsing) is
+  (`poll-commands.sh`: no-global-offset poll + local per-topic dedup, JSON filtering, date cutoff, command parsing) is
   covered only by `shellcheck` + a stubbed-`getUpdates` smoke run. Formal automated coverage
   is **mandatory** in the infra plan (B), whose bats suite for `_tg-resolve.sh` and
   `poll-commands.sh` is non-optional and which **hard-depends on this plan landing first**.
@@ -101,15 +101,24 @@ forking the upstream `planning` plugin.
   `telegram.conf` → sibling `autopilot-*` search → fill blanks → topic lookup by normalized
   origin remote.
 - **`poll-commands.sh <data-dir> <queue-start-epoch>`**: sources `_tg-resolve.sh`; if
-  unconfigured → `exit 0` silently. Reads offset from `<TG_DATA_DIR>/telegram-offset`
-  (per-chat keyed file). Calls `getUpdates?offset=<o>&timeout=0&allowed_updates=["message"]`
-  (`--max-time 10`). For each update: keep only `message.chat.id == TG_CHAT`, and if
-  `TG_TOPIC` set then `message.message_thread_id == TG_TOPIC`, and if
-  `TELEGRAM_ALLOWED_USER_IDS` set then `message.from.id ∈` list, and `message.date ≥`
-  queue-start-epoch. Map text (`/stop`, `/stop@bot`, bare `stop`; same for `status`) to a
-  normalized token printed one-per-line. Persist `offset = max(update_id)+1`. Always `exit 0`.
-  Parse JSON with `jq`. Note: Step 6's substeps are numbered 1–7 in the current SKILL.md
-  (not 6.1–6.7); the two additions below are described by position, not literal numbers.
+  unconfigured → `exit 0` silently. **Critical design constraint (shared multi-machine bot):**
+  Telegram `getUpdates` offsets are **bot-wide per token** — advancing the offset acks updates
+  for EVERY chat/topic, so a poller for one project would consume another project's (or another
+  machine's) commands and they would silently vanish. Therefore this poller **never advances the
+  global Telegram offset.** It calls `getUpdates?timeout=0&allowed_updates=["message"]` (no
+  `offset` param, so Telegram returns the unconfirmed backlog of the last ~24h; `--max-time 10`)
+  and dedups **locally**: it reads a per-topic marker file
+  `<TG_DATA_DIR>/telegram-seen-<TG_CHAT>[-<TG_TOPIC>]` holding the highest `update_id` THIS poller
+  has already acted on, and ignores any update with `update_id ≤` that marker. For the remaining
+  updates it keeps only `message.chat.id == TG_CHAT`, and if `TG_TOPIC` set then
+  `message.message_thread_id == TG_TOPIC`, and if `TG_ALLOWED` set then `message.from.id ∈` it,
+  and `message.date ≥` queue-start-epoch. Map text (`/stop`, `/stop@bot`, bare `stop`; same for
+  `status`) to a normalized token printed one-per-line, then write the new max `update_id` to the
+  marker file. Always `exit 0`. Parse JSON with `jq`. **Trade-off (documented):** the backlog is
+  re-fetched each poll (cheap at personal volume) and Telegram auto-expires it after ~24h; in
+  return the shared-bot model is preserved and concurrent machines/projects never steal each
+  other's commands. Note: Step 6's substeps are numbered 1–7 in the current SKILL.md (not
+  6.1–6.7); the two additions below are described by position, not literal numbers.
 - **SKILL.md Step 6 wiring**:
   - **Poll checkpoint** — a new FIRST substep, before the existing substep 1 ("Announce"):
     only when `telegram_control != false`, run `poll-commands.sh "${CLAUDE_PLUGIN_DATA}" "$QSTART"`.
@@ -136,7 +145,7 @@ forking the upstream `planning` plugin.
 - Create: `plugins/autopilot/skills/batch/scripts/_tg-resolve.sh`
 - Modify: `plugins/autopilot/skills/batch/scripts/notify.sh`
 
-- [ ] create `_tg-resolve.sh` containing the resolution logic currently in `notify.sh` lines 49–121 (data-dir resolution, env seed, conf pick + sibling `autopilot-*` fallback, fill-blanks, topic lookup by normalized origin), exporting `TG_TOKEN`/`TG_CHAT`/`TG_TOPIC`/`TG_LABEL`/`TG_DATA_DIR`
+- [ ] create `_tg-resolve.sh` containing the resolution logic currently in `notify.sh` lines 49–121 (data-dir resolution, env seed, conf pick + sibling `autopilot-*` fallback, fill-blanks, topic lookup by normalized origin), exporting `TG_TOKEN`/`TG_CHAT`/`TG_TOPIC`/`TG_LABEL`/`TG_DATA_DIR`/`TG_ALLOWED` — the last resolved from `TELEGRAM_ALLOWED_USER_IDS` with the **same env→conf precedence** as the rest, accepting a comma- or space-separated list of numeric user ids (empty = no allowlist)
 - [ ] refactor `notify.sh` to `source` the helper and use the exported vars for its send step; preserve exact CLI (`notify.sh <data-dir> <msg...>`), plain-text send, and always-`exit 0` behavior
 - [ ] guard the helper for safe sourcing (no `exit`; signal "unconfigured" by empty `TG_TOKEN`/`TG_CHAT`) and add `# shellcheck shell=bash` / disable directives as needed
 - [ ] verify: `shellcheck _tg-resolve.sh notify.sh` is clean
@@ -148,17 +157,18 @@ forking the upstream `planning` plugin.
 - Create: `plugins/autopilot/skills/batch/scripts/poll-commands.sh`
 
 - [ ] create `poll-commands.sh <data-dir> <queue-start-epoch>` sourcing `_tg-resolve.sh`; `exit 0` silently when unconfigured
-- [ ] implement offset persistence in `<TG_DATA_DIR>/telegram-offset` and the `getUpdates?offset=&timeout=0&allowed_updates=["message"]` call (`--max-time 10`), parsing with `jq`
+- [ ] implement the **no-global-offset** poll: `getUpdates?timeout=0&allowed_updates=["message"]` (`--max-time 10`, NO `offset` param so the global ack is never advanced), with **local per-topic dedup** via `<TG_DATA_DIR>/telegram-seen-<chat>[-<topic>]` (skip `update_id ≤` the stored marker; write the new max after acting), parsing with `jq`
 - [ ] implement filtering (chat id, optional topic, optional `TG_ALLOWED` allowlist from the helper, `date ≥ queue-start-epoch`) and map `/stop`,`/status` (incl. `@bot` and bare forms) to normalized tokens printed one-per-line; always `exit 0`
 - [ ] verify: `shellcheck poll-commands.sh` is clean
-- [ ] smoke test: unconfigured → no output, exit 0; with a stubbed `getUpdates` JSON fixture (via a `CURL`/PATH shim or `--data` capture), assert `/stop` and `/status` are recognized and stale-dated messages are dropped — must pass before Task 3
+- [ ] smoke test: unconfigured → no output, exit 0; with a stubbed `getUpdates` JSON fixture (via a `CURL`/PATH shim or `--data` capture), assert: `/stop` & `/status` are recognized; stale-dated AND already-seen (`update_id ≤` marker) messages are dropped; with `TG_ALLOWED` set, a denied `from.id` is ignored and an allowed one passes; with `TG_ALLOWED` unset, any chat/topic member passes; the global offset is never advanced (no `offset=` in the captured request) — must pass before Task 3
 
 ### Task 3: Worktree hint banner in the queue loop
 
 **Files:**
 - Modify: `plugins/autopilot/skills/batch/SKILL.md`
 
-- [ ] add a new substep between worktree pre-arrange (substep 4) and the `/planning:exec` invoke (substep 5) instructing the orchestrator to print a deterministic worktree hint, with the three strategy-keyed messages (`per_plan`/`shared` → "choose Stay here"; `none` → neutral) — these are the **canonical** hint strings
+- [ ] add a normalization step right after Step 3's AskUserQuestion: map the stored `WT` answer — which is the **label** (`Worktree per plan` / `One shared worktree` / `In-place`), NOT the `worktree_strategy` userConfig enum (`per_plan`/`shared`/`none`) — to ONE canonical enum (`per_plan`/`shared`/`none`). Both the existing worktree pre-arrange (substep 4) and the new hint MUST switch on this canonical enum, so the hint cannot fall through or mismatch
+- [ ] add a new substep between worktree pre-arrange (substep 4) and the `/planning:exec` invoke (substep 5) instructing the orchestrator to print a deterministic worktree hint, keyed by the canonical enum, with the three strategy-keyed messages (`per_plan`/`shared` → "choose Stay here"; `none` → neutral) — these are the **canonical** hint strings
 - [ ] explain in-line WHY (planning:exec always asks; cannot be suppressed from loom; hint trivializes the second prompt) referencing the no-drift constraint
 - [ ] verify: SKILL.md still parses as a valid skill (front-matter intact); the three canonical hint strings are defined here (Task 5 will mirror them verbatim in the README, and the verbatim cross-check is performed in Task 7)
 - [ ] verify: the hint substep is positioned before the `/planning:exec` invoke — must pass before Task 4

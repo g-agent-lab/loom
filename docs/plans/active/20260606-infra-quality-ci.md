@@ -73,8 +73,8 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
   and from CI, each exiting non-zero with a clear message on violation.
 - A `tests/` bats suite for the runtime shell scripts, using temp-dir fixtures (fake repos,
   fake plan files, fake `telegram.conf`, stubbed `curl`).
-- One `ci.yml` that installs tooling and runs: validate-marketplace → drift-guard →
-  version-sync → link-check → shellcheck → bats.
+- One `ci.yml` that installs tooling and runs: require-plan-a → validate-marketplace →
+  drift-guard → version-sync (diff-aware) → link-check → shellcheck → bats.
 
 ## Technical Details
 
@@ -86,14 +86,24 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
 - **`drift-guard.sh`**: assert `plugins/` contains exactly `autopilot kit slicer` (no extra
   vendored dirs); assert no manifest entry for an umputun plugin uses a local `./plugins/...`
   source. Fail listing offenders.
-- **`version-sync.sh`**: **section-scoped matching** (a bare grep is unsound — `0.1.0` appears
-  under BOTH autopilot and kit in the root CHANGELOG, so a naive match cross-validates). For
-  each own plugin, the `plugin.json` `version` must appear **within that plugin's own changelog
-  section**: for autopilot/kit, the text between `## autopilot`/`## kit` and the next `## `
-  header in root `CHANGELOG.md` (extract with awk); for slicer, in `plugins/slicer/CHANGELOG.md`.
-  The guard keys off `plugins/<x>/` files only — editing root README/CLAUDE.md must NOT trip it
-  (only own-plugin changes require a version+changelog per CLAUDE.md). Fail with the precise
-  per-plugin mismatch.
+- **`version-sync.sh`** — TWO distinct responsibilities, kept separate so the guard cannot give
+  false confidence (a static "version appears in changelog" check does NOT enforce "a change
+  requires a bump" — `0.3.1` keeps matching even after autopilot code changes):
+  1. **Static consistency (always runs):** **section-scoped matching** (a bare grep is unsound —
+     `0.1.0` appears under BOTH autopilot and kit in the root CHANGELOG, so a naive match
+     cross-validates). For each own plugin, the `plugin.json` `version` must appear **within that
+     plugin's own changelog section**: for autopilot/kit, the text between `## autopilot`/`## kit`
+     and the next `## ` header in root `CHANGELOG.md` (extract with awk); for slicer, in
+     `plugins/slicer/CHANGELOG.md`.
+  2. **Diff-aware enforcement (when a base ref is available — i.e. CI):** this is what actually
+     encodes the convention. Compute changed files vs base (`git diff --name-only $BASE...HEAD`,
+     `$BASE` = PR base, else `git merge-base origin/master HEAD`). If ANY `plugins/<own>/**` file
+     changed, REQUIRE the same diff to also change that plugin's `.claude-plugin/plugin.json`
+     `version` AND add a line under that plugin's changelog section. When no base ref is
+     resolvable (local one-off), fall back to static mode and `log` that enforcement was skipped
+     — never a silent pass.
+  The guard keys off `plugins/<x>/` paths only — editing root README/CLAUDE.md must NOT trip it.
+  Fail with the precise per-plugin mismatch.
 - **`link-check.sh`**: extract relative markdown links from README + plugin READMEs + `docs/`
   (excluding `docs/plans/`, which cross-reference transient plan files) and assert each target
   path exists in-repo. Skip `http(s)://`, `mailto:`, and pure `#anchor` links. Fail listing
@@ -141,19 +151,21 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
 - Create: `scripts/link-check.sh`
 
 - [ ] implement `drift-guard.sh` (plugins/ == exactly autopilot+kit+slicer; umputun entries stay git-subdir)
-- [ ] implement `version-sync.sh` with **section-scoped** matching: autopilot/kit versions checked within their own `## <plugin>`→next-`## ` block in root `CHANGELOG.md` (awk-extracted), slicer checked in `plugins/slicer/CHANGELOG.md`; key off `plugins/<x>/` only (root README/CLAUDE.md edits must not trip it)
+- [ ] implement `version-sync.sh` with BOTH modes (see Technical Details): (1) **static** section-scoped matching — autopilot/kit versions checked within their own `## <plugin>`→next-`## ` block in root `CHANGELOG.md` (awk-extracted), slicer in `plugins/slicer/CHANGELOG.md`; (2) **diff-aware enforcement** when a base ref exists — if `plugins/<own>/**` changed vs base, REQUIRE the same diff to bump that plugin's `plugin.json` `version` AND add a changelog line under its section (else fall back to static and `log` that enforcement was skipped). Key off `plugins/<x>/` paths only
 - [ ] implement `link-check.sh` (relative markdown links resolve in-repo; skip `http(s)://`, `mailto:`, `#anchor`; exclude `docs/plans/`)
 - [ ] verify: `shellcheck` clean on all three
 - [ ] test (pass): all three exit 0 against the real repo
-- [ ] test (fail): temp fixtures — a vendored `plugins/brainstorm/`; a kit version present only in autopilot's CHANGELOG section (proves section-scoping rejects the cross-section false match); a dead relative link — each produces a non-zero exit with a clear message — must pass before Task 4
+- [ ] test (fail): temp fixtures — a vendored `plugins/brainstorm/`; a kit version present only in autopilot's CHANGELOG section (proves section-scoping rejects the cross-section false match); a simulated diff where `plugins/autopilot/**` changed but `plugin.json` `version` did NOT (proves diff-aware enforcement fails it); a dead relative link — each produces a non-zero exit with a clear message — must pass before Task 4
 
 ### Task 4: bats unit-test suite for shell scripts
 
-> ⚠️ **PREREQUISITE (hard gate):** plan A must have landed so that `_tg-resolve.sh` and
-> `poll-commands.sh` exist at `plugins/autopilot/skills/batch/scripts/`. If they are absent,
-> stop and record a ➕ follow-up — do not silently drop their coverage.
+> ⚠️ **PREREQUISITE (executable hard gate, not prose):** plan A must have landed so that
+> `_tg-resolve.sh` and `poll-commands.sh` exist at `plugins/autopilot/skills/batch/scripts/`.
+> This is enforced by `scripts/require-plan-a.sh` (below) and wired into CI (Task 5) — so the
+> infra suite cannot appear "complete" while the two highest-risk scripts have no coverage.
 
 **Files (to Create):**
+- `scripts/require-plan-a.sh`
 - `tests/helpers.bash`
 - `tests/discover-plans.bats` — SUT: `plugins/autopilot/skills/batch/scripts/discover-plans.sh`
 - `tests/mark-completed.bats` — SUT: `plugins/autopilot/skills/batch/scripts/mark-completed.sh`
@@ -161,20 +173,21 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
 - `tests/poll-commands.bats` — SUT: `plugins/autopilot/skills/batch/scripts/poll-commands.sh`
 - `tests/kit-detect.bats` — SUT: `plugins/kit/skills/greenfield/scripts/{detect-stack.sh,detect-mode.sh}`
 
+- [ ] create `scripts/require-plan-a.sh`: exit non-zero if any of `_tg-resolve.sh`, `poll-commands.sh` (under `plugins/autopilot/skills/batch/scripts/`) or `tests/tg-resolve.bats`, `tests/poll-commands.bats` are absent — the executable A→B gate
 - [ ] install the bats harness locally: `brew install bats-core` (hard prerequisite for this task's own pass gate)
 - [ ] add `tests/helpers.bash` with temp-dir setup/teardown and a `curl` PATH-stub helper; have each `.bats` reference its SUT by the full nested path above
 - [ ] write bats for `discover-plans.sh` (sorts, excludes `completed/`, skips non-runnable plans) and `mark-completed.sh` (moves into `completed/`, lazy-creates subdir)
-- [ ] write bats for `_tg-resolve.sh` (env precedence, conf parse, sibling `autopilot-*` fallback, topic lookup) and `poll-commands.sh` (offset persist, chat/topic/date filters, `/stop`+`/status` recognition) using stubbed `curl`/fixtures
+- [ ] write bats for `_tg-resolve.sh` (env precedence, conf parse, sibling `autopilot-*` fallback, topic lookup, `TG_ALLOWED` parse) and `poll-commands.sh` (no-global-offset poll + local per-topic last-seen dedup, chat/topic/date/allowlist filters, `/stop`+`/status` recognition, and that the global offset is never advanced) using stubbed `curl`/fixtures
 - [ ] write bats for `detect-stack.sh` and `detect-mode.sh` (greenfield vs brownfield signals; known-stack detection)
-- [ ] `git add` the new `tests/` files (CI only sees tracked files), then run `bats tests/` locally — all green — must pass before Task 5
+- [ ] `git add` the new `tests/`/`scripts/` files (CI only sees tracked files), run `scripts/require-plan-a.sh` (passes), then `bats tests/` locally — all green — must pass before Task 5
 
 ### Task 5: shellcheck wiring + GitHub Actions CI
 
 **Files:**
 - Create: `.github/workflows/ci.yml`
 
-- [ ] author `ci.yml` (push + PR): install `shellcheck`/`jq`/`bats`; run validate-marketplace, drift-guard, version-sync, link-check; `shellcheck` over all tracked `*.sh`; `bats tests/`
-- [ ] ensure the job fails the build on any check's non-zero exit; name steps clearly
+- [ ] author `ci.yml` (push + PR): checkout with `fetch-depth: 0` (so version-sync's diff-aware mode has a base ref); install `shellcheck`/`jq`/`bats`; run `scripts/require-plan-a.sh`, validate-marketplace, drift-guard, version-sync (diff-aware in CI), link-check; `shellcheck` over all tracked `*.sh`; `bats tests/`
+- [ ] ensure the job fails the build on any check's non-zero exit (including `require-plan-a.sh`); name steps clearly
 - [ ] verify: `shellcheck $(git ls-files '*.sh')` is clean locally (fix any residual findings in existing scripts)
 - [ ] test: run the exact CI command sequence locally (or via `act` if available) — all steps pass — must pass before Task 6
 
