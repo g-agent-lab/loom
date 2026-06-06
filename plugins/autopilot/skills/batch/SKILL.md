@@ -89,13 +89,13 @@ Reuse `<PROJECT>` and `<BRANCH>` in every message below.
 
 Failures are sent at **both** levels — a failure is exactly the moment the operator needs to know. Treat each `notify.sh` call as fire-and-forget: do not check its output, do not retry, do not let it affect queue control flow.
 
-## Two-way control via loom-relay (`relay_control`)
+## Two-way control via loom-relay
 
-Opt-in remote control. With `relay_control == true` **and** the `loom-relay` MCP server connected, the operator can send `/stop` (graceful halt after the current plan) and `/status` (live counters reply) from Telegram. Gating is **strict**: default `false`; anything other than an explicit `true` (including absent or unparsed config) leaves this OFF. Commands are checked at **plan boundaries only** — never mid-plan.
+Remote control activates **automatically whenever the `loom-relay` MCP server is connected** — i.e. its `poll_commands` / `ack_commands` / `post_status` tools are available. **There is no separate toggle to set**: configuring the `loom-relay` MCP server *is* the opt-in, and removing it (`claude mcp remove loom-relay`) is the opt-out. (This replaced the old `relay_control` userConfig, which Claude Code only let you flip in the interactive `/plugin` UI — un-scriptable.) With the server connected, the operator can send `/stop` (graceful halt after the current plan) and `/status` (live counters reply) from Telegram. Commands are checked at **plan boundaries only** — never mid-plan.
 
 **autopilot does NOT touch Telegram for intake.** Webhook ownership, dedup, allowlist, and topic→project demux all live in the separate **`loom-relay`** Cloudflare Worker (see `01-loom-relay-hub.md`). autopilot is just an MCP client that, at each boundary, polls **its own project's** queue and replies. `notify.sh` (one-way progress) is independent and unaffected — `sendMessage` still works with the relay's webhook set.
 
-**Hard requirement — the MCP server MUST be named exactly `loom-relay`.** The `allowed-tools` front-matter lists `mcp__loom-relay__poll_commands` / `…__ack_commands` / `…__post_status` *statically*. A `.mcp.json` server under any other name yields `mcp__<other>__*` tools that are absent from `allowed-tools`, so the calls never resolve — and because an unavailable tool is treated as a silent no-op, `relay_control=true` would then **silently do nothing**, indistinguishable from "not configured". The skill cannot tell a name mismatch from genuine non-configuration (both surface as tool-absent), so this is a **documented requirement**, not an assumption — and the silent-no-op is called out so you know where to look. The server authenticates to Cloudflare Access with **service-token** headers (`CF-Access-Client-Id` / `CF-Access-Client-Secret`) supplied via `${...}` env-expansion in `.mcp.json` (never committed). Setup: `${CLAUDE_PLUGIN_ROOT}/references/relay-control.md`.
+**Hard requirement — the MCP server MUST be named exactly `loom-relay`.** The `allowed-tools` front-matter lists `mcp__loom-relay__poll_commands` / `…__ack_commands` / `…__post_status` *statically*. A `.mcp.json` server under any other name yields `mcp__<other>__*` tools that are absent from `allowed-tools`, so the calls never resolve — and because an unavailable tool is treated as a silent no-op, control would then **silently do nothing**, indistinguishable from "not configured". The skill cannot tell a name mismatch from genuine non-configuration (both surface as tool-absent), so this is a **documented requirement**, not an assumption — and the silent-no-op is called out so you know where to look. The server authenticates to Cloudflare Access with **service-token** headers (`CF-Access-Client-Id` / `CF-Access-Client-Secret`) supplied to the `.mcp.json` entry via a `headersHelper` script (recommended — it reads the token from a local file, so control connects regardless of how Claude Code was launched) or via `${...}` env-expansion; the secret is never committed. Setup: `${CLAUDE_PLUGIN_ROOT}/references/relay-control.md`.
 
 **Project key.** Every relay call uses `RELAY_PROJECT_KEY` — the **normalized `git remote origin`** (the exact same normalization `notify.sh` does), captured in Step 4. This is NOT the display `PROJECT` basename; reusing `PROJECT` would not match the relay's `PROJECT_ROUTES` key and would silently poll the wrong (empty) queue.
 
@@ -173,7 +173,7 @@ Capture the log path it outputs (after the leading `queue-log:` prefix). Use thi
 
 IMPORTANT: Always use `${CLAUDE_PLUGIN_ROOT}/skills/batch/scripts/append-queue-log.sh` to write to the log after initialization. Never write to it directly.
 
-**Capture two-way-control context (only when `relay_control == true` — see Two-way control).** Once, alongside `PROJECT`/`BRANCH`, capture the queue start time, the relay project key, and the ack cursor:
+**Capture two-way-control context (only when the `loom-relay` MCP tools are available — see Two-way control).** Once, alongside `PROJECT`/`BRANCH`, capture the queue start time, the relay project key, and the ack cursor:
 
 ```bash
 QSTART=$(date +%s); LAST_HANDLED_ID=0
@@ -208,7 +208,7 @@ Initialize counters: `completed=0`, `failed=0`, `skipped=0`. Iterate over the di
 
 For each plan:
 
-**Boundary control checkpoint** (runs FIRST, before substep 1 below — only when `relay_control == true` AND the `loom-relay` MCP tools are available; otherwise skip entirely, a silent no-op). Call `poll_commands(project=RELAY_PROJECT_KEY, since=QSTART, ack_through=LAST_HANDLED_ID)`. Process returned commands in **ascending `id`**; for each, perform its effect FIRST, then durably ack:
+**Boundary control checkpoint** (runs FIRST, before substep 1 below — only when the `loom-relay` MCP tools are available; otherwise skip entirely, a silent no-op). Call `poll_commands(project=RELAY_PROJECT_KEY, since=QSTART, ack_through=LAST_HANDLED_ID)`. Process returned commands in **ascending `id`**; for each, perform its effect FIRST, then durably ack:
 - `status` → `post_status(project=RELAY_PROJECT_KEY, "📊 [N/M] ok:<completed> fail:<failed> skip:<skipped>")`. Reply only — does NOT change control flow.
 - `stop` → `post_status(project=RELAY_PROJECT_KEY, "🛑 stopped by command")`, then `skipped += (M - N + 1)` (plan N has not run yet, so it and all remaining are skipped) and mark the queue to break to Step 7 after this checkpoint finishes.
 - **Durably ack only AFTER an effect succeeds**: advance `LAST_HANDLED_ID` to that command's `id`, then call `ack_commands(project=RELAY_PROJECT_KEY, ack_through=LAST_HANDLED_ID)` as the LAST relay call (for `stop`: ack, then break). A command whose effect failed (e.g. `post_status` errored) is NOT acked — it stays in the relay and retries on the next poll.
@@ -276,9 +276,9 @@ CRITICAL: You are the QUEUE ORCHESTRATOR. Do NOT investigate why a plan failed. 
 
 CRITICAL: Do NOT modify the plan file yourself. Only `/planning:exec` (via its subagents) writes to the plan. The `mark-completed.sh` script only moves the file; it does not edit content.
 
-Safety: bound the loop at most `M` iterations. The loop's only termination conditions are (a) all M plans processed, (b) a failure with `stop_on_failure=true`, or (c) a `/stop` at the boundary checkpoint (when `relay_control` is on).
+Safety: bound the loop at most `M` iterations. The loop's only termination conditions are (a) all M plans processed, (b) a failure with `stop_on_failure=true`, or (c) a `/stop` at the boundary checkpoint (when the `loom-relay` MCP is connected).
 
-**Final boundary checkpoint** (runs ONCE after the loop exits — whether all plans completed, a failure broke it, or a `/stop` broke it — before the Step 7 summary; same `relay_control == true` + tools-available gating). Do one last `poll_commands(project=RELAY_PROJECT_KEY, since=QSTART, ack_through=LAST_HANDLED_ID)` so a command sent **during the last plan** is still handled:
+**Final boundary checkpoint** (runs ONCE after the loop exits — whether all plans completed, a failure broke it, or a `/stop` broke it — before the Step 7 summary; same tools-available gating). Do one last `poll_commands(project=RELAY_PROJECT_KEY, since=QSTART, ack_through=LAST_HANDLED_ID)` so a command sent **during the last plan** is still handled:
 - a late `status` → `post_status(project=RELAY_PROJECT_KEY, …)` reply with the final counters;
 - a late `stop` is a **no-op** (the queue is already ending — do NOT double-count `skipped`).
 Then advance `LAST_HANDLED_ID` and `ack_commands(project=RELAY_PROJECT_KEY, ack_through=LAST_HANDLED_ID)` the handled ids — this is exactly the terminal case `ack_commands` exists for (there is no next poll to ride the ack on). Any MCP error/unavailable → no-op (never blocks the summary).

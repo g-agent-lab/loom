@@ -1,7 +1,7 @@
 {
   "name": "autopilot",
   "description": "Run a queue of plan files sequentially via /planning:exec — one after another, autonomously, each in its own git worktree",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "author": {
     "name": "gurgen"
   },
@@ -50,12 +50,6 @@
       "type": "string",
       "description": "How chatty Telegram notifications are: 'per_plan' sends a message at queue start, each plan start, each plan result, and the final summary; 'summary' sends only queue start, failures, and the final summary (no per-plan start/success spam).",
       "default": "per_plan"
-    },
-    "relay_control": {
-      "title": "Two-way control via loom-relay",
-      "type": "boolean",
-      "description": "Opt-in remote /stop and /status from Telegram, checked at plan boundaries only. Requires the separate loom-relay MCP server configured in .mcp.json under exactly the name 'loom-relay'; when off (default) or unconfigured, the queue behaves identically to v0.3.1. Changes control flow: /stop halts the queue gracefully after the current plan.",
-      "default": false
     }
   }
 }

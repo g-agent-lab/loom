@@ -5,6 +5,23 @@ The umputun plugins are referenced from upstream and versioned there, not here.
 
 ## autopilot
 
+### 0.5.0 — 2026-06-06
+- **Removed the `relay_control` userConfig.** Two-way control (`/stop`, `/status`)
+  now activates **automatically whenever the `loom-relay` MCP server is connected** —
+  the server's presence is the opt-in, `claude mcp remove loom-relay` is the opt-out.
+  Rationale: Claude Code only lets a plugin's userConfig be flipped in the
+  interactive `/plugin` UI (no CLI, no settings file), so gating an MCP-driven
+  feature on a userConfig toggle made setup un-scriptable. The MCP tools'
+  availability is already the real signal; the toggle was redundant friction.
+- Docs now recommend supplying the Cloudflare Access service-token via a
+  `headersHelper` script (reads the token from a local file, emits headers as JSON
+  at connect time) instead of `${...}` env-expansion. This makes control connect
+  **regardless of how Claude Code was launched** (stale terminal / GUI / IDE), where
+  env-expansion silently expanded to empty and failed Access. Env-expansion stays
+  documented as the simpler alternative.
+- Behavior is otherwise identical to 0.4.0: boundary-only checks, at-least-once ack,
+  never blocks the queue, `notify.sh` one-way progress untouched.
+
 ### 0.4.0 — 2026-06-06
 - Worktree hint: before each `/planning:exec` invoke, print a deterministic banner
   (keyed by the worktree strategy) telling the operator how to answer

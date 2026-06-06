@@ -7,9 +7,9 @@ Worker — see its `docs/plans/.../01-loom-relay-hub.md` and `docs/SETUP.md`.
 
 ## What it does
 
-With `relay_control: true` (autopilot userConfig, default `false`) and the
-`loom-relay` MCP server connected, the queue checks for commands **at each plan
-boundary**:
+When the `loom-relay` MCP server is connected, the queue checks for commands **at
+each plan boundary**. There is **no toggle** — the MCP server's presence *is* the
+switch (configure it to enable, `claude mcp remove loom-relay` to disable):
 
 - **`/status`** — replies in the project's Telegram topic with live counters
   (`📊 [N/M] ok:<c> fail:<f> skip:<s>`). Does not change control flow.
@@ -27,9 +27,14 @@ last plan is still answered by a final checkpoint before the summary.
 2. Add the MCP server to the machine's `.mcp.json`. **The entry MUST be named
    exactly `loom-relay`** — the skill's `allowed-tools` reference
    `mcp__loom-relay__*` statically, so any other name yields tools the skill
-   cannot call, and `relay_control` then **silently does nothing** (looks identical
-   to "not configured"). Pass the Access service-token headers via `${...}`
-   env-expansion so no secret lands in the repo:
+   cannot call, and control then **silently does nothing** (looks identical
+   to "not configured").
+
+   **Recommended — `headersHelper` (launch-independent).** Point the entry at a
+   small script that reads the service token from a local file and prints the
+   headers as JSON. Because it reads a file (not the process env), control connects
+   no matter how Claude Code was started (fresh terminal, stale terminal, IDE, GUI),
+   and no secret lives in `.mcp.json`:
 
    ```jsonc
    {
@@ -37,21 +42,36 @@ last plan is still answered by a final checkpoint before the summary.
        "loom-relay": {
          "type": "http",
          "url": "https://relay.<your-domain>/mcp",
-         "headers": {
-           "CF-Access-Client-Id": "${LOOM_RELAY_CF_ACCESS_CLIENT_ID}",
-           "CF-Access-Client-Secret": "${LOOM_RELAY_CF_ACCESS_CLIENT_SECRET}"
-         }
+         "headersHelper": "bash /absolute/path/to/loom-relay-headers.sh"
        }
      }
    }
    ```
 
-   Export `LOOM_RELAY_CF_ACCESS_CLIENT_ID` / `LOOM_RELAY_CF_ACCESS_CLIENT_SECRET`
-   in the machine's environment (e.g. your shell profile). Cloudflare Access
-   validates these at the edge and injects the JWT the Worker verifies — the client
-   never fabricates the assertion header. This is **not** a single bearer token.
-3. Set autopilot's `relay_control` userConfig to `true`.
-4. Make sure the relay's `PROJECT_ROUTES` includes this repo's key — the
+   The helper (chmod 600, outside any repo) prints exactly one JSON object to stdout:
+
+   ```bash
+   #!/usr/bin/env bash
+   # reads the service token saved at deploy time; emits the two Access headers
+   exec python3 - <<'PY'
+   import json, os
+   d = json.load(open(os.path.expanduser('~/.config/loom-relay/service-token.json')))
+   cid = d.get('client_id') or d.get('result', {}).get('client_id', '')
+   sec = d.get('client_secret') or d.get('result', {}).get('client_secret', '')
+   print(json.dumps({"CF-Access-Client-Id": cid, "CF-Access-Client-Secret": sec}))
+   PY
+   ```
+
+   Cloudflare Access validates these service-token headers at the edge and injects
+   the JWT the Worker verifies — the client never fabricates the assertion header.
+   This is **not** a single bearer token.
+
+   **Simpler alternative — static `headers` with env-expansion.** Use
+   `"headers": { "CF-Access-Client-Id": "${LOOM_RELAY_CF_ACCESS_CLIENT_ID}", … }`
+   and export both vars in the machine's environment. Works, but only when Claude
+   Code is launched from a shell that has those vars exported — a stale terminal or
+   a GUI launch will expand them to empty and auth will fail.
+3. Make sure the relay's `PROJECT_ROUTES` includes this repo's key — the
    **normalized `git remote origin`** (same key `notify.sh` uses), not the repo
    basename — mapped to its Telegram topic.
 
@@ -60,7 +80,7 @@ last plan is still answered by a final checkpoint before the summary.
 - **Latency.** Control is checked only between plans, so `/stop` takes effect after
   the plan currently running finishes — there is no mid-plan interruption.
 - **Never blocks the queue.** Any MCP error or an unavailable/misnamed server is a
-  silent no-op; the run continues exactly as if `relay_control` were off.
+  silent no-op; the run continues exactly as if `loom-relay` were not configured.
 - **Intake lives in the hub.** Dedup (`update_id`), the allowlist, and topic→project
   demux are all handled by `loom-relay`. autopilot only consumes its own project's
   queue. One-way progress via `notify.sh` is independent and unaffected.

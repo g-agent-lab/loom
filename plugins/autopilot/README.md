@@ -51,7 +51,9 @@ The skill asks once which worktree strategy to use across the run, then iterates
 | `max_plans_per_run` | `0` | Hard cap (0 = no cap) |
 | `notify` | `true` | Telegram notifications master switch (no-op until configured) |
 | `notify_level` | `per_plan` | `per_plan` \| `summary` |
-| `relay_control` | `false` | Opt-in two-way control (`/stop`, `/status`) via the `loom-relay` MCP hub |
+
+Two-way control (`/stop`, `/status`) has **no userConfig** — it turns on by itself
+when the `loom-relay` MCP server is connected. See below.
 
 ## Telegram notifications
 
@@ -76,10 +78,11 @@ map: [`references/telegram-setup.md`](references/telegram-setup.md).
 
 ## Two-way control (`/stop`, `/status`)
 
-Opt-in (`relay_control`, default off). Control a running queue from Telegram:
-**`/stop`** halts the queue gracefully after the current plan (remaining plans
-skipped); **`/status`** replies with live counters (`ok` / `fail` / `skip`).
-Commands are checked at **plan boundaries only** — never mid-plan.
+Active automatically whenever the `loom-relay` MCP server is connected — **no toggle**;
+configuring the server is the opt-in, `claude mcp remove loom-relay` is the opt-out.
+Control a running queue from Telegram: **`/stop`** halts the queue gracefully after the
+current plan (remaining plans skipped); **`/status`** replies with live counters
+(`ok` / `fail` / `skip`). Commands are checked at **plan boundaries only** — never mid-plan.
 
 autopilot does **not** poll Telegram itself. Intake (webhook, dedup, allowlist,
 topic→project routing) lives in a separate Cloudflare Worker, **`loom-relay`**,
@@ -88,8 +91,10 @@ calls them at each boundary for its own project's queue. One-way `notify.sh`
 progress is unaffected and keeps working alongside it.
 
 Setup: deploy `loom-relay`, then add it to the machine's `.mcp.json` **under exactly
-the name `loom-relay`** (a different name silently disables control), passing
-Cloudflare Access **service-token** headers via env-expansion — no secret in the repo:
+the name `loom-relay`** (a different name silently disables control). Supply the
+Cloudflare Access **service-token** headers with a `headersHelper` script — it reads
+the token from a local file and emits the headers at connect time, so control works
+**no matter how Claude Code was launched** and no secret lands in the config:
 
 ```jsonc
 {
@@ -97,14 +102,18 @@ Cloudflare Access **service-token** headers via env-expansion — no secret in t
     "loom-relay": {
       "type": "http",
       "url": "https://relay.<your-domain>/mcp",
-      "headers": {
-        "CF-Access-Client-Id": "${LOOM_RELAY_CF_ACCESS_CLIENT_ID}",
-        "CF-Access-Client-Secret": "${LOOM_RELAY_CF_ACCESS_CLIENT_SECRET}"
-      }
+      "headersHelper": "bash /absolute/path/to/loom-relay-headers.sh"
     }
   }
 }
 ```
+
+The helper just prints the headers as JSON, e.g.
+`{"CF-Access-Client-Id":"…","CF-Access-Client-Secret":"…"}`, reading them from a
+local 600-mode file. (Simpler alternative: a static `headers` block using
+`${LOOM_RELAY_CF_ACCESS_CLIENT_ID}` / `${LOOM_RELAY_CF_ACCESS_CLIENT_SECRET}`
+env-expansion — but then those vars must be exported in the environment Claude Code
+is launched from, which breaks if you launch from a stale terminal or a GUI.)
 
 Full setup, supported commands, and the latency caveat:
 [`references/relay-control.md`](references/relay-control.md).
