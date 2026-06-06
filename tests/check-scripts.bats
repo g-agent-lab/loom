@@ -534,7 +534,9 @@ EOF
 
     # MUTATION-VERIFY: revert the membership line to the piped-printf form and
     # confirm THIS scenario goes red (SIGPIPE-masked: exit 0, no UNCHANGED).
-    sed -i '' 's#if ! grep -q "\^plugins/\$name/" <<<"\$changed"; then#if ! printf '"'"'%s\\n'"'"' "$changed" | grep -q "^plugins/$name/"; then#' "$R/scripts/version-sync.sh"
+    # portable in-place edit: `-i.bak` works on both BSD (macOS) and GNU (Linux/CI)
+    # sed; the `.bak` backup lands in the auto-cleaned per-test tmpdir.
+    sed -i.bak 's#if ! grep -q "\^plugins/\$name/" <<<"\$changed"; then#if ! printf '"'"'%s\\n'"'"' "$changed" | grep -q "^plugins/$name/"; then#' "$R/scripts/version-sync.sh"
     run_versync "$R" "$base"
     [ "$status" -eq 0 ]
     # a substring-stripped equality is bats-enforced; it fails iff UNCHANGED is
@@ -591,7 +593,7 @@ EOF
     # MUTATION-VERIFY: neuter the diff-failure branch (the pre-fix `|| true`
     # behavior — masked failure, no SKIP log). The mutant still exits 0 but
     # must NO LONGER print the SKIPPED line.
-    sed -i '' 's#if \[ "\$diff_status" -ne 0 \]; then#if false; then#' "$R/scripts/version-sync.sh"
+    sed -i.bak 's#if \[ "\$diff_status" -ne 0 \]; then#if false; then#' "$R/scripts/version-sync.sh"
     run_versync "$R" "$orphan"
     [ "$status" -eq 0 ]
     [ "$output" = "${output/DIFF-AWARE enforcement SKIPPED/}" ]
