@@ -170,11 +170,11 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
 **Files:**
 - Create: `scripts/validate-marketplace.sh`
 
-- [ ] implement `jq`-based validation of `marketplace.json` (top-level fields; own plugins resolve to a dir + matching `plugin.json` name + non-empty version; umputun entries are `git-subdir`)
-- [ ] exit non-zero with a precise message per violation; exit 0 when clean
-- [ ] verify: `shellcheck scripts/validate-marketplace.sh` clean
-- [ ] test (pass case): run against the real repo → exit 0
-- [ ] test (fail case): run against a temp copy with a broken entry (missing version / vendored umputun) → non-zero with the expected message — must pass before Task 3
+- [x] implement `jq`-based validation of `marketplace.json` (top-level fields; own plugins resolve to a dir + matching `plugin.json` name + non-empty version; umputun entries are `git-subdir`)
+- [x] exit non-zero with a precise message per violation; exit 0 when clean
+- [x] verify: `shellcheck scripts/validate-marketplace.sh` clean
+- [x] test (pass case): run against the real repo → exit 0
+- [x] test (fail case): run against a temp copy with a broken entry (missing version / vendored umputun) → non-zero with the expected message — must pass before Task 3
 
 ### Task 3: Guard scripts — drift, version-sync, link-check
 
