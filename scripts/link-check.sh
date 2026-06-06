@@ -30,16 +30,61 @@ err() {
 # Handles two markdown link forms:
 #   - inline      [text](url)   — the url may itself contain balanced ()
 #                                 (the naive [^)]+ regex truncated those);
-#                                 awk consumes the inner parens by depth.
+#                                 awk consumes the inner parens by depth. A
+#                                 trailing markdown title — (url "title") or
+#                                 (url 'title') — is dropped (URL ends at the
+#                                 first unescaped whitespace inside the parens).
 #   - reference   [id]: url     — link-reference definitions at line start.
+# Code is skipped so a documented `](...)` is not mistaken for a link:
+#   - fenced code blocks (``` or ~~~ ... fences) are ignored wholesale;
+#   - inline code spans (`...`) are stripped from each line before scanning.
 extract_links() {
     awk '
+        # --- fenced code blocks: toggle on a fence line, skip while inside ---
+        /^[[:space:]]*(```|~~~)/ { in_fence = !in_fence; next }
+        in_fence { next }
+
+        # --- strip inline code spans (`...`, ``...``, ...) from the line ---
+        # Remove balanced backtick runs so any "](" inside code is not parsed.
+        {
+            line = $0
+            out = ""
+            n = length(line)
+            i = 1
+            while (i <= n) {
+                c = substr(line, i, 1)
+                if (c == "`") {
+                    # measure the opening backtick run length
+                    run = 0
+                    while (i <= n && substr(line, i, 1) == "`") { run++; i++ }
+                    # find a closing run of exactly the same length
+                    closed = 0
+                    while (i <= n) {
+                        if (substr(line, i, 1) == "`") {
+                            r2 = 0
+                            j = i
+                            while (j <= n && substr(line, j, 1) == "`") { r2++; j++ }
+                            if (r2 == run) { i = j; closed = 1; break }
+                            i = j   # different-length run: still inside the span
+                        } else {
+                            i++
+                        }
+                    }
+                    if (!closed) break   # unterminated span: drop the rest
+                } else {
+                    out = out c
+                    i++
+                }
+            }
+            $0 = out
+        }
+
         # reference-style definition: ^[id]: url  (optional "title" ignored)
         /^[[:space:]]*\[[^][]+\]:[[:space:]]*[^[:space:]]/ {
-            line = $0
-            sub(/^[[:space:]]*\[[^][]+\]:[[:space:]]*/, "", line)
-            sub(/[[:space:]].*$/, "", line)   # drop any trailing title
-            if (line != "") print line
+            ref = $0
+            sub(/^[[:space:]]*\[[^][]+\]:[[:space:]]*/, "", ref)
+            sub(/[[:space:]].*$/, "", ref)   # drop any trailing title
+            if (ref != "") print ref
         }
         # inline links: scan for "](", then read the URL honoring nested parens.
         {
@@ -48,11 +93,19 @@ extract_links() {
                 s = substr(s, p + 2)          # text after the "]("
                 depth = 1
                 url = ""
+                seen_url = 0                  # have we started the URL token?
+                done_url = 0                  # has whitespace ended the URL?
                 for (i = 1; i <= length(s); i++) {
                     c = substr(s, i, 1)
-                    if (c == "(") depth++
-                    else if (c == ")") { depth--; if (depth == 0) break }
-                    url = url c
+                    if (c == "(") { depth++; if (!done_url) { url = url c; seen_url = 1 } }
+                    else if (c == ")") { depth--; if (depth == 0) break; if (!done_url) { url = url c } }
+                    else if (c == " " || c == "\t") {
+                        # first unescaped whitespace after the URL ends it
+                        # (anything after is an optional "title"); skip leading
+                        # whitespace before the URL token begins.
+                        if (seen_url) done_url = 1
+                    }
+                    else if (!done_url) { url = url c; seen_url = 1 }
                 }
                 if (depth == 0 && url != "") print url
                 s = substr(s, i + 1)          # continue past this link

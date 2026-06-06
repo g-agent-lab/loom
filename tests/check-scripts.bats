@@ -92,8 +92,11 @@ run_versync() {
 EOF
     run "$SUT_DRIFT" "$R"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"plugins/brainstorm"* ]]
-    [[ "$output" == *"vendored"* ]]
+    # grep -qF (a simple command) is bats-ENFORCED: a non-zero exit aborts the
+    # test. `[[ ... ]]` compound conditionals are NOT — bats only fails on the
+    # test's final line for those — so message specificity must use grep.
+    echo "$output" | grep -qF "plugins/brainstorm"
+    echo "$output" | grep -qF "vendored"
 }
 
 # ===========================================================================
@@ -114,8 +117,8 @@ EOF
 EOF
     run "$SUT_VALIDATE" "$R"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"version"* ]]
-    [[ "$output" == *"autopilot"* ]]
+    echo "$output" | grep -qF "version"
+    echo "$output" | grep -qF "autopilot"
 }
 
 @test "validate-marketplace: plugin.json name mismatch FAILS" {
@@ -133,8 +136,8 @@ EOF
 EOF
     run "$SUT_VALIDATE" "$R"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"does not match"* ]]
-    [[ "$output" == *"wrong-name"* ]]
+    echo "$output" | grep -qF "does not match"
+    echo "$output" | grep -qF "wrong-name"
 }
 
 # ===========================================================================
@@ -147,8 +150,71 @@ EOF
     printf '# t\n\n[broken](./does-not-exist.md)\n' > "$R/README.md"
     run "$SUT_LINKCHECK" "$R"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"dead relative link"* ]]
-    [[ "$output" == *"does-not-exist.md"* ]]
+    echo "$output" | grep -qF "dead relative link"
+    echo "$output" | grep -qF "does-not-exist.md"
+}
+
+@test "link-check: a TITLED inline link to an existing file PASSES" {
+    # Regression: a standard titled link `[text](path "Title")` must extract
+    # only `path`, not `path "Title"` — otherwise it never resolves and trips a
+    # false dead-link. Both double- and single-quoted titles, plus a title on a
+    # link carrying a #anchor, must all resolve to the real target.
+    R="${TMP}/lc-title"
+    mkdir -p "$R/docs"
+    printf '# target\n' > "$R/docs/real.md"
+    {
+        printf '# t\n\n'
+        printf '[dq](docs/real.md "Some Title")\n'
+        printf "[sq](docs/real.md 'Other Title')\n"
+        printf '[anchor](docs/real.md#section "T")\n'
+    } > "$R/README.md"
+    run "$SUT_LINKCHECK" "$R"
+    [ "$status" -eq 0 ]
+    echo "$output" | grep -qF "OK"
+}
+
+@test "link-check: a dead link inside code (span/fence) is NOT reported" {
+    # Regression: a `](nonexistent)` inside an inline code span or a fenced code
+    # block is documentation, not a link — it must not trip a false dead-link.
+    R="${TMP}/lc-code"
+    mkdir -p "$R"
+    {
+        printf '# t\n\n'
+        printf 'Inline: use `[x](./ghost.md)` syntax for links.\n\n'
+        printf '```\n'
+        printf '[y](./phantom.md)\n'
+        printf '```\n\n'
+        printf '~~~markdown\n'
+        printf '[z](./vapor.md)\n'
+        printf '~~~\n'
+    } > "$R/README.md"
+    run "$SUT_LINKCHECK" "$R"
+    [ "$status" -eq 0 ]
+    echo "$output" | grep -qF "OK"
+}
+
+@test "link-check: a real dead link still FAILS even amid code/titled links" {
+    # Regression guard: the code/title leniency must NOT swallow a genuine dead
+    # relative link sitting in the same file as a code span and a titled link.
+    R="${TMP}/lc-mixed"
+    mkdir -p "$R/docs"
+    printf '# target\n' > "$R/docs/real.md"
+    {
+        printf '# t\n\n'
+        printf '[ok](docs/real.md "Title")\n'
+        printf 'code: `[c](./fake.md)`\n'
+        printf '[bad](./genuinely-dead.md)\n'
+    } > "$R/README.md"
+    run "$SUT_LINKCHECK" "$R"
+    [ "$status" -ne 0 ]
+    echo "$output" | grep -qF "dead relative link"
+    echo "$output" | grep -qF "genuinely-dead.md"
+    # the code-span and titled targets must NOT appear as dead links. A negated
+    # pipeline (`! ... | grep`) is NOT bats-enforced (the `!` suppresses the
+    # abort); a single-bracket equality on a substring-stripped copy IS — it
+    # fails iff the substring is present.
+    [ "$output" = "${output/fake.md/}" ]
+    [ "$output" = "${output/Title/}" ]
 }
 
 # ===========================================================================
@@ -186,8 +252,8 @@ EOF
 EOF
     run_versync "$R"          # no base -> static mode only
     [ "$status" -ne 0 ]
-    [[ "$output" == *"kit"* ]]
-    [[ "$output" == *"0.9.9"* ]]
+    echo "$output" | grep -qF "kit"
+    echo "$output" | grep -qF "0.9.9"
 }
 
 # ===========================================================================
@@ -232,8 +298,8 @@ EOF
     vs_commit "$R" "edit autopilot, no bump"
     run_versync "$R" "$base"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"UNCHANGED"* ]]
-    [[ "$output" == *"autopilot"* ]]
+    echo "$output" | grep -qF "UNCHANGED"
+    echo "$output" | grep -qF "autopilot"
 }
 
 @test "version-sync DIFF: bump with NO changelog line FAILS" {
@@ -245,8 +311,8 @@ EOF
     vs_commit "$R" "bump autopilot, no changelog"
     run_versync "$R" "$base"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"autopilot"* ]]
-    [[ "$output" == *"0.2.0"* ]]
+    echo "$output" | grep -qF "autopilot"
+    echo "$output" | grep -qF "0.2.0"
 }
 
 @test "version-sync DIFF: a DOWNGRADE FAILS" {
@@ -281,8 +347,8 @@ EOF
     vs_commit "$R" "downgrade autopilot"
     run_versync "$R" "$base"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"autopilot"* ]]
-    [[ "$output" == *"0.1.0"* ]]
+    echo "$output" | grep -qF "autopilot"
+    echo "$output" | grep -qF "0.1.0"
 }
 
 @test "version-sync DIFF: bump + matching changelog line PASSES (positive control)" {
@@ -310,5 +376,5 @@ EOF
     vs_commit "$R" "bump autopilot + changelog"
     run_versync "$R" "$base"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"OK"* ]]
+    echo "$output" | grep -qF "OK"
 }
