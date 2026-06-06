@@ -18,7 +18,7 @@ Two operator-facing improvements to the `autopilot` plugin, shipped together as 
 > plugin (`poll-commands.sh`). Deep research proved that unsound for a shared multi-machine bot:
 > the `getUpdates` offset is **bot-wide per token**, caps at 100 unconfirmed updates, and allows
 > **only one consumer per token** (409). The intake now lives in the separate **`loom-relay`**
-> Cloudflare Worker (see `20260606-01-loom-relay-hub.md`), which owns the webhook and exposes
+> Cloudflare Worker (see `01-loom-relay-hub.md`), which owns the webhook and exposes
 > `poll_commands` / `post_status` MCP tools. **`loom-relay` must be built/deployed and its MCP
 > server configured in the session before this plan's Feature 2 is usable.**
 
@@ -59,7 +59,7 @@ remote control without forking the upstream `planning` plugin and without the po
     and the previously-planned `_tg-resolve.sh` extraction is dropped (YAGNI: `notify.sh` would be
     its only consumer). `notify.sh` stays as-is.
 - Dependencies:
-  - **Hard dependency on `20260606-01-loom-relay-hub.md`** (the MCP hub) for Feature 2 at runtime.
+  - **Hard dependency on `01-loom-relay-hub.md`** (the MCP hub) for Feature 2 at runtime.
     The hub's tool contract: `poll_commands(project, since, ack_through)` returns commands with
     `id > ack_through` and `ts >= since` (ascending `id`); `ack_commands(project, ack_through)`
     advances the cursor without returning (used to confirm a handled batch when there's no next
@@ -182,7 +182,7 @@ remote control without forking the upstream `planning` plugin and without the po
 - Modify: `CHANGELOG.md`
 
 - [ ] README: add `relay_control` to the userConfig table; document two-way control via `loom-relay` (`/stop`,`/status`), the `.mcp.json` setup sending `CF-Access-Client-Id`/`CF-Access-Client-Secret` (Access service-token) headers via `${...}` env-expansion (no secret in repo), and the worktree-hint behavior; mirror the three canonical hint strings verbatim in Known limitations; update Known limitations (plan-boundary control only; planning:exec prompt cannot be removed from loom; intake lives in loom-relay)
-- [ ] `references/relay-control.md`: how to point autopilot at a deployed `loom-relay` (MCP server entry in `.mcp.json` with the CF Access service-token headers `CF-Access-Client-Id`/`CF-Access-Client-Secret` via env, supported commands, latency caveat); cross-link `20260606-01-loom-relay-hub.md`
+- [ ] `references/relay-control.md`: how to point autopilot at a deployed `loom-relay` (MCP server entry in `.mcp.json` with the CF Access service-token headers `CF-Access-Client-Id`/`CF-Access-Client-Secret` via env, supported commands, latency caveat); cross-link `01-loom-relay-hub.md`
 - [ ] CHANGELOG.md: add an autopilot `0.4.0 — 2026-06-06` entry (worktree hint; two-way control via loom-relay MCP `/stop`+`/status`; `relay_control` config). NOTE: the root CHANGELOG header-scope fix (adding `slicer`) is owned by plan B — do NOT touch the header scope here
 - [ ] verify: English-primary prose; links resolve; no bot token / secret in any doc — must pass before Task 5
 
@@ -202,7 +202,7 @@ remote control without forking the upstream `planning` plugin and without the po
 
 *Requires external systems — no checkboxes.*
 
-**Dependency (separate plan):** `loom-relay` (`20260606-01-loom-relay-hub.md`) must be implemented
+**Dependency (separate plan):** `loom-relay` (`01-loom-relay-hub.md`) must be implemented
 and deployed, and its MCP server added to the machine's `.mcp.json`, before Feature 2 works
 end-to-end. Until then, `relay_control` off (default) = v0.3.1 behavior.
 
