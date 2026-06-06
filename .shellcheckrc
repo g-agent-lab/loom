@@ -1,0 +1,6 @@
+# Repo-root ShellCheck config (honored from repo root since ShellCheck v0.7).
+# SC2012: "Use find instead of ls" — info-level false positive for the simple
+# existence checks in our scripts (e.g. `ls <globs> | head -1 | grep -q .` in
+# plugins/kit/.../detect-mode.sh). `find` is overkill there and editing that
+# kit script would trip version-sync's diff-aware bump guard for a cosmetic lint.
+disable=SC2012

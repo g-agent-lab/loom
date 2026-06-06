@@ -1,0 +1,64 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          # Full history so version-sync's diff-aware mode can resolve a base ref.
+          fetch-depth: 0
+
+      - name: Resolve base ref for version-sync
+        # PR  -> the PR base SHA.
+        # push -> the branch's prior tip (github.event.before). The all-zero SHA
+        #         (new branch / initial push / force-push with no parent) is
+        #         treated as "no base" so version-sync falls back to static mode
+        #         and logs that diff-aware enforcement was SKIPPED.
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ -n "${PR_BASE:-}" ]; then
+            base="$PR_BASE"
+          else
+            base="${PUSH_BEFORE:-}"
+          fi
+          if [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            base=""
+          fi
+          echo "BASE=$base" >> "$GITHUB_ENV"
+          echo "resolved BASE=\"$base\""
+
+      - name: Install tooling (shellcheck, jq, bats)
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y shellcheck jq
+
+      - name: Install bats
+        uses: bats-core/bats-action@v3
+
+      - name: validate-marketplace
+        run: ./scripts/validate-marketplace.sh
+
+      - name: drift-guard
+        run: ./scripts/drift-guard.sh
+
+      - name: version-sync (diff-aware)
+        run: ./scripts/version-sync.sh "$BASE"
+
+      - name: link-check
+        run: ./scripts/link-check.sh
+
+      - name: shellcheck (all tracked *.sh)
+        run: shellcheck $(git ls-files '*.sh')
+
+      - name: bats
+        run: bats tests/

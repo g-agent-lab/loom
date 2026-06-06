@@ -211,10 +211,10 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
 **Files:**
 - Create: `.github/workflows/ci.yml`
 
-- [ ] author `ci.yml` (push + PR): checkout with `fetch-depth: 0` (so version-sync's diff-aware mode has a base ref); resolve and export `$BASE` for version-sync — PR → `github.event.pull_request.base.sha`, push → `github.event.before` (NOT `merge-base origin/master HEAD`, which is empty on a direct push to `master`); install `shellcheck`/`jq`/`bats`; run validate-marketplace, drift-guard, version-sync (diff-aware in CI, passing `$BASE`), link-check; `shellcheck` over all tracked `*.sh`; `bats tests/`
-- [ ] ensure the job fails the build on any check's non-zero exit; name steps clearly
-- [ ] verify: `shellcheck $(git ls-files '*.sh')` is clean locally (fix any residual findings in existing scripts)
-- [ ] test: run the exact CI command sequence locally (or via `act` if available) — all steps pass — must pass before Task 6
+- [x] author `ci.yml` (push + PR): checkout with `fetch-depth: 0` (so version-sync's diff-aware mode has a base ref); resolve and export `$BASE` for version-sync — PR → `github.event.pull_request.base.sha`, push → `github.event.before` (NOT `merge-base origin/master HEAD`, which is empty on a direct push to `master`); install `shellcheck`/`jq`/`bats`; run validate-marketplace, drift-guard, version-sync (diff-aware in CI, passing `$BASE`), link-check; `shellcheck` over all tracked `*.sh`; `bats tests/`
+- [x] ensure the job fails the build on any check's non-zero exit; name steps clearly
+- [x] verify: `shellcheck $(git ls-files '*.sh')` is clean locally (fix any residual findings in existing scripts)
+- [x] test: run the exact CI command sequence locally (or via `act` if available) — all steps pass — must pass before Task 6
 
 ### Task 6: Verify acceptance criteria
 
