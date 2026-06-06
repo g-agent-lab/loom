@@ -199,12 +199,12 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
 - `tests/notify.bats` — SUT: `plugins/autopilot/skills/batch/scripts/notify.sh`
 - `tests/kit-detect.bats` — SUT: `plugins/kit/skills/greenfield/scripts/{detect-stack.sh,detect-mode.sh}`
 
-- [ ] install the bats harness locally: `brew install bats-core` (hard prerequisite for this task's own pass gate)
-- [ ] add `tests/helpers.bash` with temp-dir setup/teardown and a `curl` PATH-stub helper; have each `.bats` reference its SUT by the full nested path above
-- [ ] write bats for `discover-plans.sh` (sorts, excludes `completed/`, skips non-runnable plans) and `mark-completed.sh` (moves into `completed/`, lazy-creates subdir)
-- [ ] write bats for `notify.sh`: token/chat/topic resolution (env → `telegram.conf` → sibling `autopilot-*` fallback → topic map by normalized origin), silent no-op + `exit 0` when unconfigured, and the `sendMessage` payload shape (stubbed `curl`)
-- [ ] write bats for `detect-stack.sh` and `detect-mode.sh` (greenfield vs brownfield signals; known-stack detection)
-- [ ] `git add` the new `tests/` files (CI only sees tracked files), then run `bats tests/` locally — all green — must pass before Task 5
+- [x] install the bats harness locally: `brew install bats-core` (hard prerequisite for this task's own pass gate)
+- [x] add `tests/helpers.bash` with temp-dir setup/teardown and a `curl` PATH-stub helper; have each `.bats` reference its SUT by the full nested path above
+- [x] write bats for `discover-plans.sh` (sorts, excludes `completed/`, skips non-runnable plans) and `mark-completed.sh` (moves into `completed/`, lazy-creates subdir)
+- [x] write bats for `notify.sh`: token/chat/topic resolution (env → `telegram.conf` → sibling `autopilot-*` fallback → topic map by normalized origin), silent no-op + `exit 0` when unconfigured, and the `sendMessage` payload shape (stubbed `curl`)
+- [x] write bats for `detect-stack.sh` and `detect-mode.sh` (greenfield vs brownfield signals; known-stack detection)
+- [x] `git add` the new `tests/` files (CI only sees tracked files), then run `bats tests/` locally — all green — must pass before Task 5
 
 ### Task 5: shellcheck wiring + GitHub Actions CI
 
