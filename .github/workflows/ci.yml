@@ -60,6 +60,9 @@ jobs:
       - name: link-check
         run: ./scripts/link-check.sh
 
+      - name: docs-lint
+        run: ./scripts/docs-lint.sh
+
       - name: shellcheck (all tracked *.sh)
         run: shellcheck $(git ls-files '*.sh')
 

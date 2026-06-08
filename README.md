@@ -76,6 +76,7 @@ bash scripts/validate-marketplace.sh
 bash scripts/drift-guard.sh
 bash scripts/version-sync.sh
 bash scripts/link-check.sh
+bash scripts/docs-lint.sh
 ```
 
 Lint every tracked shell script and run the unit tests:
@@ -92,7 +93,15 @@ Run `shellcheck` from the repo root so it honors the root [`.shellcheckrc`](.she
 fails the build on any non-zero exit. In CI, `version-sync.sh` runs in diff-aware mode:
 it diffs against the base ref and requires any change under `plugins/<own>/**` to bump
 that plugin's `plugin.json` version and add a matching `CHANGELOG.md` entry. Run locally
-with no base ref, it falls back to static consistency checks.
+with no base ref, it falls back to static consistency checks. `docs-lint.sh` enforces the
+documentation discipline in [`docs/DOCS_RULES.md`](docs/DOCS_RULES.md) (required docs
+exist; every env var read in a script is documented; plans reference their drafts).
+
+This repo follows the universal documentation half of
+[llm-kit](https://github.com/g-agent-lab/llm-kit) — start from
+[`docs/CONTEXT.md`](docs/CONTEXT.md). The stack-specific architecture enforcement does
+not apply (it is not a TypeScript app); deviations are listed in
+[`docs/reference/architecture-exemptions.md`](docs/reference/architecture-exemptions.md).
 
 ## License
 
