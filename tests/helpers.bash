@@ -24,6 +24,7 @@ SUT_VALIDATE="${REPO_ROOT}/scripts/validate-marketplace.sh"
 SUT_DRIFT="${REPO_ROOT}/scripts/drift-guard.sh"
 SUT_VERSYNC="${REPO_ROOT}/scripts/version-sync.sh"
 SUT_LINKCHECK="${REPO_ROOT}/scripts/link-check.sh"
+SUT_DOCSLINT="${REPO_ROOT}/scripts/docs-lint.sh"
 
 # make_tmpdir — create a fresh scratch dir for the current test and export it
 # as $TMP. Lives under BATS_TEST_TMPDIR (auto-cleaned by bats) but we also
