@@ -5,6 +5,18 @@
 > [`DOCS_RULES.md`](DOCS_RULES.md). This is separate from the own-plugin
 > [`../CHANGELOG.md`](../CHANGELOG.md).
 
+### [2026-06-08] new-machine setup runbook
+
+- Files: `docs/operations/new-machine-setup.md`, `docs/CONTEXT.md`.
+- Change: (1) added an operator runbook for bringing the full toolchain up on a
+  second machine — plugins (git install), Telegram notify configs (copy + relabel),
+  and `autopilot` two-way control (CF-Access service token, `headers.sh`, the
+  `loom-relay` MCP entry), with a verify section and a "do-not-copy relay-admin
+  files" list; (2) linked it from the CONTEXT operations row.
+- Reason: capture how the one-hub/many-clients model migrates, since `loom-relay`
+  is a single shared Worker (not a per-machine install) and only the per-machine
+  secrets/config move.
+
 ### [2026-06-08] llm-kit universal-core bootstrap (docs discipline)
 
 - Files: `docs/CONTEXT.md`, `docs/DOCS_RULES.md`, `docs/SESSION.md`,
