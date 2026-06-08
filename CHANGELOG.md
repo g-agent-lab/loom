@@ -1,7 +1,7 @@
 # Changelog
 
-All notable changes to the **own** plugins (`autopilot`, `kit`) are recorded here.
-The umputun plugins are referenced from upstream and versioned there, not here.
+All notable changes to the **own** plugins (`autopilot`, `kit`, `slicer`) are recorded
+here. The umputun plugins are referenced from upstream and versioned there, not here.
 
 ## autopilot
 
@@ -82,3 +82,9 @@ The umputun plugins are referenced from upstream and versioned there, not here.
 - Initial release in the `loom` marketplace (formerly standalone `cc-kit`).
 - Greenfield + brownfield llm-kit bootstrap driver; reads the llm-kit playbook live.
 - Bilingual skill triggers (English + Russian).
+
+## slicer
+
+`slicer` keeps its own changelog as the single source of truth — see
+[`plugins/slicer/CHANGELOG.md`](plugins/slicer/CHANGELOG.md). Entries are not
+duplicated here to avoid drift.

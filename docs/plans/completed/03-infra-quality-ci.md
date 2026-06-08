@@ -160,21 +160,21 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
 - Modify: `README.md`
 - Modify: `CHANGELOG.md`
 
-- [ ] README: change "Two plugins of my own" → three (`autopilot`, `kit`, `slicer`); add a `slicer` row to the Plugins table with the correct description and `own` origin
-- [ ] CHANGELOG.md: broaden the header scope sentence to acknowledge `slicer`, and add a `## slicer` section that **references** `plugins/slicer/CHANGELOG.md` as slicer's source of truth (a pointer line + link) — do NOT duplicate slicer's entries into the root file (one source of truth; duplication would re-introduce drift). `version-sync.sh` validates slicer against `plugins/slicer/CHANGELOG.md`, consistent with this
-- [ ] verify: README plugin table lists all 3 own + 7 umputun = 10 entries, matching `marketplace.json`
-- [ ] write check: a quick grep assertion that `slicer` appears in the README table and the root CHANGELOG header/pointer — must pass before Task 2
+- [x] README: change "Two plugins of my own" → three (`autopilot`, `kit`, `slicer`); add a `slicer` row to the Plugins table with the correct description and `own` origin
+- [x] CHANGELOG.md: broaden the header scope sentence to acknowledge `slicer`, and add a `## slicer` section that **references** `plugins/slicer/CHANGELOG.md` as slicer's source of truth (a pointer line + link) — do NOT duplicate slicer's entries into the root file (one source of truth; duplication would re-introduce drift). `version-sync.sh` validates slicer against `plugins/slicer/CHANGELOG.md`, consistent with this
+- [x] verify: README plugin table lists all 3 own + 7 umputun = 10 entries, matching `marketplace.json`
+- [x] write check: a quick grep assertion that `slicer` appears in the README table and the root CHANGELOG header/pointer — must pass before Task 2
 
 ### Task 2: validate-marketplace.sh
 
 **Files:**
 - Create: `scripts/validate-marketplace.sh`
 
-- [ ] implement `jq`-based validation of `marketplace.json` (top-level fields; own plugins resolve to a dir + matching `plugin.json` name + non-empty version; umputun entries are `git-subdir`)
-- [ ] exit non-zero with a precise message per violation; exit 0 when clean
-- [ ] verify: `shellcheck scripts/validate-marketplace.sh` clean
-- [ ] test (pass case): run against the real repo → exit 0
-- [ ] test (fail case): run against a temp copy with a broken entry (missing version / vendored umputun) → non-zero with the expected message — must pass before Task 3
+- [x] implement `jq`-based validation of `marketplace.json` (top-level fields; own plugins resolve to a dir + matching `plugin.json` name + non-empty version; umputun entries are `git-subdir`)
+- [x] exit non-zero with a precise message per violation; exit 0 when clean
+- [x] verify: `shellcheck scripts/validate-marketplace.sh` clean
+- [x] test (pass case): run against the real repo → exit 0
+- [x] test (fail case): run against a temp copy with a broken entry (missing version / vendored umputun) → non-zero with the expected message — must pass before Task 3
 
 ### Task 3: Guard scripts — drift, version-sync, link-check
 
@@ -183,12 +183,12 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
 - Create: `scripts/version-sync.sh`
 - Create: `scripts/link-check.sh`
 
-- [ ] implement `drift-guard.sh` (plugins/ == exactly autopilot+kit+slicer; umputun entries stay git-subdir)
-- [ ] implement `version-sync.sh` with BOTH modes (see Technical Details): (1) **static** section-scoped matching — autopilot/kit versions checked within their own `## <plugin>`→next-`## ` block in root `CHANGELOG.md` (awk-extracted), slicer in `plugins/slicer/CHANGELOG.md`; (2) **diff-aware enforcement** when a base ref exists — if `plugins/<own>/**` changed vs base, REQUIRE the HEAD `plugin.json` `version` to be **semver-greater than base** (unchanged or downgraded FAILS) AND a changelog line containing that exact new version under the plugin's section (else fall back to static and `log` that enforcement was skipped). Key off `plugins/<x>/` paths only
-- [ ] implement `link-check.sh` (relative markdown links resolve in-repo; skip `http(s)://`, `mailto:`, `#anchor`; exclude `docs/plans/`)
-- [ ] verify: `shellcheck` clean on all three
-- [ ] test (pass): all three exit 0 against the real repo
-- [ ] test (fail): temp fixtures — a vendored `plugins/brainstorm/`; a kit version present only in autopilot's CHANGELOG section (proves section-scoping rejects the cross-section false match); a simulated diff where `plugins/autopilot/**` changed but `plugin.json` `version` did NOT (diff-aware fails it); a diff that bumps `version` but adds **no** changelog line containing that new version (fails); a diff that bumps `version` AND adds a matching changelog line (passes — the positive control); a diff that *downgrades* `version` (fails the required semver-greater check); a dead relative link — each produces the expected exit + clear message — must pass before Task 4
+- [x] implement `drift-guard.sh` (plugins/ == exactly autopilot+kit+slicer; umputun entries stay git-subdir)
+- [x] implement `version-sync.sh` with BOTH modes (see Technical Details): (1) **static** section-scoped matching — autopilot/kit versions checked within their own `## <plugin>`→next-`## ` block in root `CHANGELOG.md` (awk-extracted), slicer in `plugins/slicer/CHANGELOG.md`; (2) **diff-aware enforcement** when a base ref exists — if `plugins/<own>/**` changed vs base, REQUIRE the HEAD `plugin.json` `version` to be **semver-greater than base** (unchanged or downgraded FAILS) AND a changelog line containing that exact new version under the plugin's section (else fall back to static and `log` that enforcement was skipped). Key off `plugins/<x>/` paths only
+- [x] implement `link-check.sh` (relative markdown links resolve in-repo; skip `http(s)://`, `mailto:`, `#anchor`; exclude `docs/plans/`)
+- [x] verify: `shellcheck` clean on all three
+- [x] test (pass): all three exit 0 against the real repo
+- [x] test (fail): temp fixtures — a vendored `plugins/brainstorm/`; a kit version present only in autopilot's CHANGELOG section (proves section-scoping rejects the cross-section false match); a simulated diff where `plugins/autopilot/**` changed but `plugin.json` `version` did NOT (diff-aware fails it); a diff that bumps `version` but adds **no** changelog line containing that new version (fails); a diff that bumps `version` AND adds a matching changelog line (passes — the positive control); a diff that *downgrades* `version` (fails the required semver-greater check); a dead relative link — each produces the expected exit + clear message — must pass before Task 4
 
 ### Task 4: bats unit-test suite for shell scripts
 
@@ -199,37 +199,37 @@ shellcheck · umputun-drift guard · version-sync · link-check · bats · CI.
 - `tests/notify.bats` — SUT: `plugins/autopilot/skills/batch/scripts/notify.sh`
 - `tests/kit-detect.bats` — SUT: `plugins/kit/skills/greenfield/scripts/{detect-stack.sh,detect-mode.sh}`
 
-- [ ] install the bats harness locally: `brew install bats-core` (hard prerequisite for this task's own pass gate)
-- [ ] add `tests/helpers.bash` with temp-dir setup/teardown and a `curl` PATH-stub helper; have each `.bats` reference its SUT by the full nested path above
-- [ ] write bats for `discover-plans.sh` (sorts, excludes `completed/`, skips non-runnable plans) and `mark-completed.sh` (moves into `completed/`, lazy-creates subdir)
-- [ ] write bats for `notify.sh`: token/chat/topic resolution (env → `telegram.conf` → sibling `autopilot-*` fallback → topic map by normalized origin), silent no-op + `exit 0` when unconfigured, and the `sendMessage` payload shape (stubbed `curl`)
-- [ ] write bats for `detect-stack.sh` and `detect-mode.sh` (greenfield vs brownfield signals; known-stack detection)
-- [ ] `git add` the new `tests/` files (CI only sees tracked files), then run `bats tests/` locally — all green — must pass before Task 5
+- [x] install the bats harness locally: `brew install bats-core` (hard prerequisite for this task's own pass gate)
+- [x] add `tests/helpers.bash` with temp-dir setup/teardown and a `curl` PATH-stub helper; have each `.bats` reference its SUT by the full nested path above
+- [x] write bats for `discover-plans.sh` (sorts, excludes `completed/`, skips non-runnable plans) and `mark-completed.sh` (moves into `completed/`, lazy-creates subdir)
+- [x] write bats for `notify.sh`: token/chat/topic resolution (env → `telegram.conf` → sibling `autopilot-*` fallback → topic map by normalized origin), silent no-op + `exit 0` when unconfigured, and the `sendMessage` payload shape (stubbed `curl`)
+- [x] write bats for `detect-stack.sh` and `detect-mode.sh` (greenfield vs brownfield signals; known-stack detection)
+- [x] `git add` the new `tests/` files (CI only sees tracked files), then run `bats tests/` locally — all green — must pass before Task 5
 
 ### Task 5: shellcheck wiring + GitHub Actions CI
 
 **Files:**
 - Create: `.github/workflows/ci.yml`
 
-- [ ] author `ci.yml` (push + PR): checkout with `fetch-depth: 0` (so version-sync's diff-aware mode has a base ref); resolve and export `$BASE` for version-sync — PR → `github.event.pull_request.base.sha`, push → `github.event.before` (NOT `merge-base origin/master HEAD`, which is empty on a direct push to `master`); install `shellcheck`/`jq`/`bats`; run validate-marketplace, drift-guard, version-sync (diff-aware in CI, passing `$BASE`), link-check; `shellcheck` over all tracked `*.sh`; `bats tests/`
-- [ ] ensure the job fails the build on any check's non-zero exit; name steps clearly
-- [ ] verify: `shellcheck $(git ls-files '*.sh')` is clean locally (fix any residual findings in existing scripts)
-- [ ] test: run the exact CI command sequence locally (or via `act` if available) — all steps pass — must pass before Task 6
+- [x] author `ci.yml` (push + PR): checkout with `fetch-depth: 0` (so version-sync's diff-aware mode has a base ref); resolve and export `$BASE` for version-sync — PR → `github.event.pull_request.base.sha`, push → `github.event.before` (NOT `merge-base origin/master HEAD`, which is empty on a direct push to `master`); install `shellcheck`/`jq`/`bats`; run validate-marketplace, drift-guard, version-sync (diff-aware in CI, passing `$BASE`), link-check; `shellcheck` over all tracked `*.sh`; `bats tests/`
+- [x] ensure the job fails the build on any check's non-zero exit; name steps clearly
+- [x] verify: `shellcheck $(git ls-files '*.sh')` is clean locally (fix any residual findings in existing scripts)
+- [x] test: run the exact CI command sequence locally (or via `act` if available) — all steps pass — must pass before Task 6
 
 ### Task 6: Verify acceptance criteria
 
-- [ ] verify every Acceptance Criteria item (top of plan) is met
-- [ ] run every check script against the repo → all exit 0
-- [ ] run `bats tests/` → all green
-- [ ] run `shellcheck` over all tracked `*.sh` → clean
-- [ ] confirm `ci.yml` is valid YAML and references only tooling installable in CI (no node/python requirement)
-- [ ] confirm no umputun-referenced files were modified (`git status`)
+- [x] verify every Acceptance Criteria item (top of plan) is met
+- [x] run every check script against the repo → all exit 0
+- [x] run `bats tests/` → all green
+- [x] run `shellcheck` over all tracked `*.sh` → clean
+- [x] confirm `ci.yml` is valid YAML and references only tooling installable in CI (no node/python requirement)
+- [x] confirm no umputun-referenced files were modified (`git status`)
 
 ### Task 7: Update documentation
 
-- [ ] README: add a short "Development / CI" section (how to run checks + tests locally via brew tooling)
-- [ ] CLAUDE.md: add the new conventions (run `scripts/*` + `bats tests/` before pushing; CI enforces drift/version/link guards)
-- [ ] move this plan to `docs/plans/completed/` (skip if executed via autopilot — it auto-moves on success)
+- [x] README: add a short "Development / CI" section (how to run checks + tests locally via brew tooling)
+- [x] CLAUDE.md: add the new conventions (run `scripts/*` + `bats tests/` before pushing; CI enforces drift/version/link guards)
+- [x] move to completed/ — deferred to end of run (kept in place so planning:exec reviews/finalize can read it; orchestrator moves it after stats)
 
 ## Post-Completion
 
