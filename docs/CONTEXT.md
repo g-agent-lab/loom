@@ -40,7 +40,7 @@ and the relay repo's own `README.md` / `docs/SETUP.md`.
 | Docs rules | [`DOCS_RULES.md`](DOCS_RULES.md) | how `docs/` is kept honest |
 | Roadmap | [`plans/ROADMAP.md`](plans/ROADMAP.md) | where we are / what's next |
 | Reference | [`reference/`](reference/) | env vars, contracts, routing, exemptions |
-| Operations | [`operations/`](operations/) | marketplace management runbook |
+| Operations | [`operations/`](operations/) | runbooks: marketplace management, new-machine setup |
 
 ## Do not read by default
 
